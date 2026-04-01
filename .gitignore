@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+
+wii_build/
+*.dol
+*.elf
+*.map
+
+.DS_Store
+Thumbs.db
+
+*.deb

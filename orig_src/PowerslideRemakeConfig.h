@@ -1,0 +1,7 @@
+#ifndef POWERSLIDEREMAKECONFIG_H
+#define POWERSLIDEREMAKECONFIG_H
+
+#define GAMEVERSION "Wii Port"
+#define GAMEBUILDDATE __DATE__
+
+#endif

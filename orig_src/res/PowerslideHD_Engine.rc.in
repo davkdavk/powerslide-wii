@@ -1,0 +1,106 @@
+//Microsoft Developer Studio generated resource script.
+//
+
+#include "@PROJECT_SOURCE_DIR@/src/res/resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include <winresrc.h>
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifndef _MAC
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION @PowerslideRemake_VERSION_MAJOR@,@PowerslideRemake_VERSION_MINOR@,@PowerslideRemake_VERSION_BUILD@,0
+ PRODUCTVERSION @PowerslideRemake_VERSION_MAJOR@,@PowerslideRemake_VERSION_MINOR@,@PowerslideRemake_VERSION_BUILD@,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "Rascal\0"
+            VALUE "FileDescription", "Powerslide Remake Application\0"
+            VALUE "FileVersion", "@PowerslideRemake_VERSION_MAJOR@, @PowerslideRemake_VERSION_MINOR@, @PowerslideRemake_VERSION_BUILD@, 0\0"
+            VALUE "InternalName", "PSHD\0"
+            VALUE "LegalCopyright", "Copyright (C) 2020\0"
+            VALUE "LegalTrademarks", "\0"
+            VALUE "OriginalFilename", "PowerslideRemake.EXE\0"
+            VALUE "ProductName", "Powerslide Remake\0"
+            VALUE "ProductVersion", "@PowerslideRemake_VERSION_MAJOR@, @PowerslideRemake_VERSION_MINOR@, @PowerslideRemake_VERSION_BUILD@, 0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+#endif    // !_MAC
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_MAIN_ICON           ICON    DISCARDABLE     "@PROJECT_SOURCE_DIR@/src/res/PowerslideHD_Engine.ico"
+
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE 9, 1
+#pragma code_page(1252)
+#endif //_WIN32
+#include "@PROJECT_SOURCE_DIR@/src/res/PowerslideHD_Engine.rc2"  // non-Microsoft Visual C++ edited resources
+#ifdef _MSC_VER
+#include "afxres.rc"         // Standard components
+#endif
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

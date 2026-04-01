@@ -1,0 +1,89 @@
+
+#include "PHYLoader.h"
+
+#include "../tools/Conversions.h"
+
+void PHYLoader::load(GameState& gameState) const
+{
+    std::vector<InitialVehicleSetup>& initialSetups = gameState.getInitialVehicleSetup();
+    initialSetups.assign(GameState::mAIMax + 1, InitialVehicleSetup());
+
+    const std::string baseDir = gameState.getSTRPowerslide().getBaseDir(gameState.getTrackName());
+    const std::string relativeDir = "data/tracks/" + baseDir + "/record";
+
+    size_t loadedCount = 0;
+
+    for(int q = 0; q < (GameState::mAIMax + 1); ++q)
+    {
+        const std::string fileName = "car" + Conversions::DMToString(q) + ".phy";
+        Ogre::DataStreamPtr fileToLoad = gameState.getPFLoaderData().getFile(relativeDir, fileName);
+        if(fileToLoad.get() && fileToLoad->isReadable())
+        {
+            InitialVehicleSetup initialVehicleSetup = initialSetups[q];
+
+            Ogre::uint32 something;
+            fileToLoad->read(&something, 4);
+
+            Ogre::Vector3 rotX;
+            Ogre::Vector3 rotY;
+            Ogre::Vector3 rotZ;
+            Ogre::Vector3 pos;
+            Ogre::Vector3 impulseRot;
+            Ogre::Vector3 impulseLinear;
+            Ogre::Vector3 impulseRotInc;
+            Ogre::Vector3 impulseLinearInc;
+
+            fileToLoad->read(&rotX, 4 * 3);
+            fileToLoad->read(&rotY, 4 * 3);
+            fileToLoad->read(&rotZ, 4 * 3);
+            fileToLoad->read(&pos, 4 * 3);
+            fileToLoad->read(&impulseRot, 4 * 3);
+            fileToLoad->read(&impulseLinear, 4 * 3);
+            fileToLoad->read(&impulseRotInc, 4 * 3);
+            fileToLoad->read(&impulseLinearInc, 4 * 3);
+
+            Ogre::Real tmp;
+            fileToLoad->read(&tmp, 4);
+            fileToLoad->read(&tmp, 4);
+            Ogre::uint32 gear;
+            fileToLoad->read(&gear, 4);
+            ++gear;
+
+            for(size_t qq = 0; qq < InitialVehicleSetup::mWheelsAmount; ++qq)
+            {
+                Ogre::Vector3 wheelData;
+                fileToLoad->read(&initialVehicleSetup.mSuspensionDataWheel[InitialVehicleSetup::mWheelsAmount - qq - 1], 4 * 3);//FL, FR, RL, RR
+                Ogre::Vector2 wheelDataTmp;
+                fileToLoad->read(&wheelDataTmp, 4 * 2);
+            }
+
+            Ogre::Matrix4 transform(
+                rotX.x, rotY.x, rotZ.x, pos.x,
+                rotX.y, rotY.y, rotZ.y, pos.y,
+                rotX.z, rotY.z, rotZ.z, -pos.z,
+                0.0f, 0.0f, 0.0f, 1.0f);
+
+            initialVehicleSetup.mTrackPosition = transform;
+            initialVehicleSetup.mInitialImpulseLinear = Ogre::Vector3(impulseLinear.x, impulseLinear.y, impulseLinear.z);
+            initialVehicleSetup.mInitialImpulseLinearInc = Ogre::Vector3(impulseLinearInc.x, impulseLinearInc.y, impulseLinearInc.z);
+            initialVehicleSetup.mInitialImpulseRot = Ogre::Vector3(impulseRot.x, impulseRot.y, impulseRot.z);
+            initialVehicleSetup.mInitialImpulseRotInc = Ogre::Vector3(impulseRotInc.x, impulseRotInc.y, impulseRotInc.z);
+
+            initialSetups[q] = initialVehicleSetup;
+
+            ++loadedCount;
+
+            fileToLoad->close();
+        }
+        else
+        {
+            Ogre::LogManager::getSingleton().logMessage(
+                Ogre::LML_CRITICAL,
+                "[PHYLoader::load]: missing PHY " + Ogre::String((relativeDir + "/" + fileName).c_str()));
+        }
+    }
+
+    Ogre::LogManager::getSingleton().logMessage(
+        Ogre::LML_NORMAL,
+        "[PHYLoader::load]: loaded " + Conversions::DMToString(loadedCount) + "/" + Conversions::DMToString(static_cast<size_t>(GameState::mAIMax + 1)) + " files");
+}
