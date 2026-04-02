@@ -126,6 +126,13 @@ void StaticMeshProcesser::initParts(lua_State * pipeline,
         for(size_t q = 0; q < de2Loader.getDE2().Data_TerranName.size(); ++q)
             mTerrainMapsNames.insert(de2Loader.getDE2().Data_TerranName[q]);
 
+        std::vector<MSHData>* partsForBuild = &mergedMSH;
+
+#if defined(WII_NATIVE_ASSET_PIPELINE)
+        // Keep original DE2 part boundaries on Wii native path so per-part/per-triangle
+        // texture mapping remains intact for direct terrain upload.
+        partsForBuild = &originalParts;
+#else
         std::map<std::string, mergedInfo> mapTexturesToMSHIndex;
 
         for(size_t q = 0; q < originalParts.size(); ++q)
@@ -141,19 +148,29 @@ void StaticMeshProcesser::initParts(lua_State * pipeline,
             mshData.clear();
 
         }
+#endif
 
 #if defined(WII) || defined(__wii__)
-        WiiDebugLog("[MESH] mergedMSH=%u\n", static_cast<unsigned int>(mergedMSH.size()));
+        WiiDebugLog("[MESH] mergedMSH=%u originalParts=%u using=%s\n",
+            static_cast<unsigned int>(mergedMSH.size()),
+            static_cast<unsigned int>(originalParts.size()),
+#if defined(WII_NATIVE_ASSET_PIPELINE)
+            "original"
+#else
+            "merged"
+#endif
+        );
 #endif
 
         //create textures
-        loadTextures(gameState, mergedMSH, gameState.getPFLoaderData(), pfFolderName, gameState.getGamma(), gameState.getDoUpscale(), loaderListener);
+        loadTextures(gameState, *partsForBuild, gameState.getPFLoaderData(), pfFolderName, gameState.getGamma(), gameState.getDoUpscale(), loaderListener);
 
         if(loaderListener)
             loaderListener->loadState(0.7f, "Textures loaded");
 
-        for(size_t q = 0; q < mergedMSH.size(); ++q)
+        for(size_t q = 0; q < partsForBuild->size(); ++q)
         {
+            MSHData& partData = (*partsForBuild)[q];
             Ogre::Entity* terrain;
             Ogre::SceneNode* terrainNode;
 
@@ -161,21 +178,21 @@ void StaticMeshProcesser::initParts(lua_State * pipeline,
             std::string nodeName = groupName + Conversions::DMToString(q);
 
             Ogre::Vector3 min, max;
-            Ogre::Vector3 centroid = mergedMSH[q].getCentroid();
-            mergedMSH[q].getMinMax(min, max, centroid);
+            Ogre::Vector3 centroid = partData.getCentroid();
+            partData.getMinMax(min, max, centroid);
 
             //create graphics entitys
             if(isGlobalReset)
             {
-                mergedMSH[q].preallocatePlainBuffer(true);
+                partData.preallocatePlainBuffer(true);
 #if defined(WII) || defined(__wii__)
-                OSReport("[MESH] createMesh call idx=%u tri=%u\n", static_cast<unsigned int>(q), static_cast<unsigned int>(mergedMSH[q].triCount));
-                WiiDebugLog("[MESH_PROBE] createMesh call idx=%u tri=%u\n", static_cast<unsigned int>(q), static_cast<unsigned int>(mergedMSH[q].triCount));
+                OSReport("[MESH] createMesh call idx=%u tri=%u\n", static_cast<unsigned int>(q), static_cast<unsigned int>(partData.triCount));
+                WiiDebugLog("[MESH_PROBE] createMesh call idx=%u tri=%u\n", static_cast<unsigned int>(q), static_cast<unsigned int>(partData.triCount));
 #endif
                 terrain = createMesh(   pipeline, 
                                         sceneMgr, nodeName, 
                                         centroid, min, max, 
-                                        mergedMSH[q], 
+                                        partData,
                                         gameState.getSTRPowerslide().getTrackSkyColor(gameState.getTrackName()),
                                         gameState.getSTRPowerslide().getFogStartEnd(gameState.getTrackName()),
                                         gameState.getSTRPowerslide().getTrackAmbientColor(gameState.getTrackName()),
@@ -184,15 +201,15 @@ void StaticMeshProcesser::initParts(lua_State * pipeline,
                 WiiDebugLog("[MESH] createMesh idx=%u ok=%d tri=%u\n",
                     static_cast<unsigned int>(q),
                     terrain ? 1 : 0,
-                    static_cast<unsigned int>(mergedMSH[q].triCount));
+                    static_cast<unsigned int>(partData.triCount));
                 OSReport("[MESH] createMesh result idx=%u ok=%d tri=%u\n",
                     static_cast<unsigned int>(q),
                     terrain ? 1 : 0,
-                    static_cast<unsigned int>(mergedMSH[q].triCount));
+                    static_cast<unsigned int>(partData.triCount));
                 WiiDebugLog("[MESH_PROBE] createMesh result idx=%u ok=%d tri=%u\n",
                     static_cast<unsigned int>(q),
                     terrain ? 1 : 0,
-                    static_cast<unsigned int>(mergedMSH[q].triCount));
+                    static_cast<unsigned int>(partData.triCount));
 #endif
             }
             else
@@ -744,7 +761,6 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                 }
 
                 const u32 vertexCount = static_cast<u32>(mshData.vertCount);
-                const u32 indexCount = static_cast<u32>(mshData.triCount * 3);
                 WiiGX::Renderer::getInstance().setTerrainBuildProbe(static_cast<u32>(mshData.triCount));
 
                 static std::vector<float> terrainVerts;
@@ -757,6 +773,7 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                     terrainVerts[v * 3 + 1] = mshData.vertexes[v].y;
                     terrainVerts[v * 3 + 2] = mshData.vertexes[v].z;
                 }
+                const u32 indexCount = static_cast<u32>(mshData.triCount * 3);
                 terrainIndices.resize(indexCount);
                 terrainUvByIndex.resize(indexCount * 2);
                 u32 maxIndex = 0;
@@ -860,14 +877,73 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                         static_cast<unsigned int>(vertexCount));
                 }
 
-                WiiGX::Renderer::getInstance().uploadTerrainIndexedDataWithUV(
-                    terrainVerts.data(), vertexCount, terrainIndices.data(), indexCount, terrainUvByIndex.data());
+                const bool hasPerTriTextureMap =
+                    mshData.textureForTriangleIndex.size() >= mshData.triCount &&
+                    !mshData.textureNames.empty();
 
-                WiiDebugLog("[GXDIR] uploading chunk: triIndexes size %u == triCount %u verts=%u indices=%u\n",
-                    static_cast<unsigned int>(mshData.triIndexes.size()),
-                    static_cast<unsigned int>(mshData.triCount),
-                    static_cast<unsigned int>(vertexCount),
-                    static_cast<unsigned int>(indexCount));
+                if(hasPerTriTextureMap)
+                {
+                    std::vector< std::vector<u32> > indicesByTexture(mshData.textureNames.size());
+                    std::vector< std::vector<float> > uvByTexture(mshData.textureNames.size());
+
+                    for(u32 t = 0; t < mshData.triCount; ++t)
+                    {
+                        u32 texSlot = static_cast<u32>(mshData.textureForTriangleIndex[t]);
+                        if(texSlot >= mshData.textureNames.size())
+                            texSlot = 0;
+
+                        const u32 ia = terrainIndices[t * 3 + 0];
+                        const u32 ib = terrainIndices[t * 3 + 1];
+                        const u32 ic = terrainIndices[t * 3 + 2];
+                        indicesByTexture[texSlot].push_back(ia);
+                        indicesByTexture[texSlot].push_back(ib);
+                        indicesByTexture[texSlot].push_back(ic);
+
+                        const size_t uvBase = static_cast<size_t>(t) * 6u;
+                        uvByTexture[texSlot].push_back(terrainUvByIndex[uvBase + 0]);
+                        uvByTexture[texSlot].push_back(terrainUvByIndex[uvBase + 1]);
+                        uvByTexture[texSlot].push_back(terrainUvByIndex[uvBase + 2]);
+                        uvByTexture[texSlot].push_back(terrainUvByIndex[uvBase + 3]);
+                        uvByTexture[texSlot].push_back(terrainUvByIndex[uvBase + 4]);
+                        uvByTexture[texSlot].push_back(terrainUvByIndex[uvBase + 5]);
+                    }
+
+                    for(size_t texSlot = 0; texSlot < mshData.textureNames.size(); ++texSlot)
+                    {
+                        if(indicesByTexture[texSlot].empty())
+                            continue;
+
+                        if(!mshData.textureNames[texSlot].empty())
+                        {
+                            WiiGX::Renderer::getInstance().setTerrainTextureName(mshData.textureNames[texSlot]);
+                        }
+
+                        WiiGX::Renderer::getInstance().uploadTerrainIndexedDataWithUV(
+                            terrainVerts.data(),
+                            vertexCount,
+                            indicesByTexture[texSlot].data(),
+                            static_cast<u32>(indicesByTexture[texSlot].size()),
+                            uvByTexture[texSlot].data());
+
+                        WiiDebugLog("[GXDIR] uploading sub-batch: triIndexes=%u verts=%u indices=%u texSlot=%u tex='%s'\n",
+                            static_cast<unsigned int>(mshData.triIndexes.size()),
+                            static_cast<unsigned int>(vertexCount),
+                            static_cast<unsigned int>(indicesByTexture[texSlot].size()),
+                            static_cast<unsigned int>(texSlot),
+                            mshData.textureNames[texSlot].c_str());
+                    }
+                }
+                else
+                {
+                    WiiGX::Renderer::getInstance().uploadTerrainIndexedDataWithUV(
+                        terrainVerts.data(), vertexCount, terrainIndices.data(), indexCount, terrainUvByIndex.data());
+
+                    WiiDebugLog("[GXDIR] uploading chunk: triIndexes size %u == triCount %u verts=%u indices=%u\n",
+                        static_cast<unsigned int>(mshData.triIndexes.size()),
+                        static_cast<unsigned int>(mshData.triCount),
+                        static_cast<unsigned int>(vertexCount),
+                        static_cast<unsigned int>(indexCount));
+                }
             }
         }
 #endif

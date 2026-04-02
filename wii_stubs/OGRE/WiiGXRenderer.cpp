@@ -1121,9 +1121,12 @@ namespace WiiGX
             static int sTexDiagLogs = 0;
             static int sTexBindLogs = 0;
             static int sUVRangeLogs = 0;
+            static int sUVSummaryLogs = 0;
             static int sBatchTexLogs = 0;
+            static int sTexMissingLogs = 0;
             const char* kPinnedTerrainTexture = "roadsection2_m_1.tex";
             const char* kPinnedTerrainTextureAlt = "roadsection2.tga";
+            const float kTerrainPlanarTextureScale = 10.0f;
             static const char* kDebugBatchTextures[] = {
                 "roadsection2_m_1.tex",
                 "startline_right_m_1.tex",
@@ -1178,6 +1181,9 @@ namespace WiiGX
                 drawBatches.push_back(single);
             }
 
+            unsigned int frameBatchCount = 0;
+            unsigned int frameNoUVBatchCount = 0;
+
             for(size_t bi = 0; bi < drawBatches.size(); ++bi)
             {
                 TerrainChunkBatch batch = drawBatches[bi];
@@ -1194,7 +1200,17 @@ namespace WiiGX
 
                 if(textureModeRequested)
                 {
-                    std::string requestedTexture = batch.textureName.empty() ? (mTerrainTextureName.empty() ? std::string(kPinnedTerrainTexture) : mTerrainTextureName) : batch.textureName;
+                    std::string requestedTexture = batch.textureName;
+                    if(requestedTexture.empty())
+                    {
+                        if(sTexMissingLogs < 128)
+                        {
+                            WiiDebugLog("[TEX_MISS] bi=%u chunk='<empty>' requested='<empty>' (no global fallback)\n",
+                                static_cast<unsigned int>(bi));
+                            sTexMissingLogs++;
+                        }
+                        continue;
+                    }
                     if(gTerrainBatchTextureDebug)
                     {
                         const size_t debugCount = sizeof(kDebugBatchTextures) / sizeof(kDebugBatchTextures[0]);
@@ -1245,9 +1261,11 @@ namespace WiiGX
                         sBatchTexLogs++;
                     }
 
+                    bool textureResolvedForBatch = false;
+
                     if(!sTerrainTexReady)
                     {
-                        const char* requestedName = requestedTexture.empty() ? kPinnedTerrainTexture : requestedTexture.c_str();
+                        const char* requestedName = requestedTexture.c_str();
                         Ogre::TexturePtr tex = resolvedTex;
                         if(!tex.get())
                             tex = Ogre::TextureManager::getSingleton().getByName(requestedName, "tempRes");
@@ -1272,7 +1290,7 @@ namespace WiiGX
                             }
                         }
 
-                        if(!(src && srcW > 0 && srcH > 0))
+                        if(!(src && srcW > 0 && srcH > 0) && requestedTexture.empty())
                         {
                             Ogre::String fallbackName;
                             Ogre::TexturePtr fallback = Ogre::TextureManager::getSingleton().getFirstPopulatedTexture(&fallbackName);
@@ -1357,6 +1375,7 @@ namespace WiiGX
                             sTerrainTexReady = true;
                             sLoadedTerrainTextureName = requestedTexture;
                             sLoadedTerrainTextureSource = srcName;
+                            textureResolvedForBatch = true;
                             if(sTexBindLogs < 64)
                             {
                                 WiiDebugLog("[TEX_BIND] requested='%s' source='%s' chunk='%s' fmt=%d size=%ux%u\n",
@@ -1375,9 +1394,29 @@ namespace WiiGX
                             sTexNotReadyLogs++;
                         }
                     }
+                    else
+                    {
+                        textureResolvedForBatch = true;
+                    }
+
+                    if(!textureResolvedForBatch)
+                    {
+                        if(sTexMissingLogs < 128)
+                        {
+                            WiiDebugLog("[TEX_MISS] bi=%u chunk='%s' requested='%s' (batch skipped)\n",
+                                static_cast<unsigned int>(bi),
+                                batch.textureName.empty() ? "<default>" : batch.textureName.c_str(),
+                                requestedTexture.c_str());
+                            sTexMissingLogs++;
+                        }
+                        continue;
+                    }
 
                     useTerrainTexture = sTerrainTexReady;
                     batchHasUV = hasInlineUV && (mTerrainDirectUVByIndex.size() >= (static_cast<size_t>(uvStart + batch.indexCount) * 2u));
+                    frameBatchCount++;
+                    if(!batchHasUV)
+                        frameNoUVBatchCount++;
                 }
 
                 if(useTerrainTexture)
@@ -1431,39 +1470,24 @@ namespace WiiGX
 
                     GX_Position3s16(sx, sy, sz);
                     if(useTerrainTexture)
+                    {
                         GX_Color4u8(255, 255, 255, 255);
+                    }
+                    else if(textureModeRequested)
+                    {
+                        GX_Color4u8(255, 0, 255, 255);
+                    }
                     else
+                    {
                         GX_Color4u8(cR, cG, cB, 255);
+                    }
 
                     if(textureModeRequested)
                     {
-                        const float wx = mTerrainDirectVertices[vi * 3 + 0] - centerX;
-                        const float wz = mTerrainDirectVertices[vi * 3 + 2] - centerZ;
-                        float outU = wx * 0.0025f;
-                        float outV = wz * 0.0025f;
-                        if(batchHasUV)
-                        {
-                            const size_t uvIdx = static_cast<size_t>(uvStart + localI) * 2u;
-                            const float inU = mTerrainDirectUVByIndex[uvIdx + 0];
-                            const float inV = mTerrainDirectUVByIndex[uvIdx + 1];
-                            if((inU == inU) && (inV == inV) && fabsf(inU) <= 8192.0f && fabsf(inV) <= 8192.0f)
-                            {
-                                outU = inU;
-                                outV = 1.0f - inV;
-                            }
-                            else
-                            {
-                                ++invalidUV;
-                            }
-                        }
-
-                        if(!batchHasUV)
-                        {
-                            if(outU < -64.0f) outU = -64.0f;
-                            if(outU > 64.0f) outU = 64.0f;
-                            if(outV < -64.0f) outV = -64.0f;
-                            if(outV > 64.0f) outV = 64.0f;
-                        }
+                        const float worldX = mTerrainDirectVertices[vi * 3 + 0];
+                        const float worldZ = mTerrainDirectVertices[vi * 3 + 2];
+                        const float outU = worldX / kTerrainPlanarTextureScale;
+                        const float outV = worldZ / kTerrainPlanarTextureScale;
                         if(outU < minU) minU = outU;
                         if(outU > maxU) maxU = outU;
                         if(outV < minV) minV = outV;
@@ -1497,6 +1521,15 @@ namespace WiiGX
                         static_cast<unsigned int>(invalid),
                         useTerrainTexture ? 1 : 0);
                     sTexDiagLogs++;
+                }
+
+                if(textureModeRequested && sUVSummaryLogs < 8 && bi + 1 == drawBatches.size())
+                {
+                    WiiDebugLog("[UV_SUMMARY] batches=%u noUV=%u scale=%.2f\n",
+                        static_cast<unsigned int>(frameBatchCount),
+                        static_cast<unsigned int>(frameNoUVBatchCount),
+                        kTerrainPlanarTextureScale);
+                    sUVSummaryLogs++;
                 }
             }
             return;

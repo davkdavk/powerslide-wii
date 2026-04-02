@@ -849,7 +849,29 @@ namespace Ogre
             mWidth = width;
             mHeight = height;
             mDepth = depth;
-            size_t size = static_cast<size_t>(mWidth) * static_cast<size_t>(mHeight) * 4;
+            size_t elemBytes = 4;
+            switch (mFormat)
+            {
+                case PF_R8:
+                    elemBytes = 1;
+                    break;
+                case PF_R5G6B5:
+                    elemBytes = 2;
+                    break;
+                case PF_R8G8B8:
+                case PF_B8G8R8:
+                case PF_BYTE_RGB:
+                    elemBytes = 3;
+                    break;
+                case PF_A8R8G8B8:
+                case PF_B8G8R8A8:
+                case PF_BYTE_BGRA:
+                default:
+                    elemBytes = 4;
+                    break;
+            }
+            size_t size = static_cast<size_t>(mWidth) * static_cast<size_t>(mHeight) * static_cast<size_t>(mDepth) * elemBytes;
+            mBpp = static_cast<uint>(elemBytes * 8);
             mData.assign(size, 0);
             if (data && size) {
                 std::memcpy(mData.data(), data, size);
@@ -877,8 +899,46 @@ namespace Ogre
             if (mData.empty() || x >= mWidth || y >= mHeight) {
                 return ColourValue::Black;
             }
-            size_t i = (static_cast<size_t>(y) * mWidth + x) * 4;
-            return ColourValue(mData[i] / 255.0f, mData[i + 1] / 255.0f, mData[i + 2] / 255.0f, mData[i + 3] / 255.0f);
+            const size_t pixel = static_cast<size_t>(y) * mWidth + x;
+            switch (mFormat)
+            {
+                case PF_R5G6B5:
+                {
+                    const size_t i = pixel * 2;
+                    const unsigned short packed = static_cast<unsigned short>(mData[i + 0] | (static_cast<unsigned short>(mData[i + 1]) << 8));
+                    const float r = static_cast<float>((packed >> 11) & 0x1F) / 31.0f;
+                    const float g = static_cast<float>((packed >> 5) & 0x3F) / 63.0f;
+                    const float b = static_cast<float>(packed & 0x1F) / 31.0f;
+                    return ColourValue(r, g, b, 1.0f);
+                }
+                case PF_BYTE_BGRA:
+                case PF_B8G8R8A8:
+                {
+                    const size_t i = pixel * 4;
+                    return ColourValue(mData[i + 2] / 255.0f, mData[i + 1] / 255.0f, mData[i + 0] / 255.0f, mData[i + 3] / 255.0f);
+                }
+                case PF_A8R8G8B8:
+                {
+                    const size_t i = pixel * 4;
+                    return ColourValue(mData[i + 1] / 255.0f, mData[i + 2] / 255.0f, mData[i + 3] / 255.0f, mData[i + 0] / 255.0f);
+                }
+                case PF_R8G8B8:
+                case PF_BYTE_RGB:
+                {
+                    const size_t i = pixel * 3;
+                    return ColourValue(mData[i + 0] / 255.0f, mData[i + 1] / 255.0f, mData[i + 2] / 255.0f, 1.0f);
+                }
+                case PF_B8G8R8:
+                {
+                    const size_t i = pixel * 3;
+                    return ColourValue(mData[i + 2] / 255.0f, mData[i + 1] / 255.0f, mData[i + 0] / 255.0f, 1.0f);
+                }
+                default:
+                {
+                    const size_t i = pixel * 4;
+                    return ColourValue(mData[i] / 255.0f, mData[i + 1] / 255.0f, mData[i + 2] / 255.0f, mData[i + 3] / 255.0f);
+                }
+            }
         }
         void applyGamma(uchar* data, Real gamma, size_t size, uint bpp)
         {
@@ -891,11 +951,70 @@ namespace Ogre
         {
             (void)z;
             if (mData.empty() || x >= mWidth || y >= mHeight) return;
-            size_t i = (static_cast<size_t>(y) * mWidth + x) * 4;
-            mData[i] = static_cast<uchar>(c.r * 255.0f);
-            mData[i + 1] = static_cast<uchar>(c.g * 255.0f);
-            mData[i + 2] = static_cast<uchar>(c.b * 255.0f);
-            mData[i + 3] = static_cast<uchar>(c.a * 255.0f);
+            const size_t pixel = static_cast<size_t>(y) * mWidth + x;
+            const uchar cr = static_cast<uchar>(c.r * 255.0f);
+            const uchar cg = static_cast<uchar>(c.g * 255.0f);
+            const uchar cb = static_cast<uchar>(c.b * 255.0f);
+            const uchar ca = static_cast<uchar>(c.a * 255.0f);
+            switch (mFormat)
+            {
+                case PF_R5G6B5:
+                {
+                    const size_t i = pixel * 2;
+                    const unsigned short r5 = static_cast<unsigned short>((cr >> 3) & 0x1F);
+                    const unsigned short g6 = static_cast<unsigned short>((cg >> 2) & 0x3F);
+                    const unsigned short b5 = static_cast<unsigned short>((cb >> 3) & 0x1F);
+                    const unsigned short packed = static_cast<unsigned short>((r5 << 11) | (g6 << 5) | b5);
+                    mData[i + 0] = static_cast<uchar>(packed & 0xFF);
+                    mData[i + 1] = static_cast<uchar>((packed >> 8) & 0xFF);
+                    break;
+                }
+                case PF_BYTE_BGRA:
+                case PF_B8G8R8A8:
+                {
+                    const size_t i = pixel * 4;
+                    mData[i + 0] = cb;
+                    mData[i + 1] = cg;
+                    mData[i + 2] = cr;
+                    mData[i + 3] = ca;
+                    break;
+                }
+                case PF_A8R8G8B8:
+                {
+                    const size_t i = pixel * 4;
+                    mData[i + 0] = ca;
+                    mData[i + 1] = cr;
+                    mData[i + 2] = cg;
+                    mData[i + 3] = cb;
+                    break;
+                }
+                case PF_R8G8B8:
+                case PF_BYTE_RGB:
+                {
+                    const size_t i = pixel * 3;
+                    mData[i + 0] = cr;
+                    mData[i + 1] = cg;
+                    mData[i + 2] = cb;
+                    break;
+                }
+                case PF_B8G8R8:
+                {
+                    const size_t i = pixel * 3;
+                    mData[i + 0] = cb;
+                    mData[i + 1] = cg;
+                    mData[i + 2] = cr;
+                    break;
+                }
+                default:
+                {
+                    const size_t i = pixel * 4;
+                    mData[i + 0] = cr;
+                    mData[i + 1] = cg;
+                    mData[i + 2] = cb;
+                    mData[i + 3] = ca;
+                    break;
+                }
+            }
         }
         PixelBox getPixelBox()
         {
@@ -926,13 +1045,27 @@ namespace Ogre
     {
         static size_t getMemorySize(size_t width, size_t height, size_t depth, PixelFormat format)
         {
-            (void)format;
-            return width * height * depth * 4;
+            return width * height * depth * getNumElemBytes(format);
         }
         static size_t getNumElemBytes(PixelFormat format)
         {
-            (void)format;
-            return 4;
+            switch (format)
+            {
+                case PF_R8:
+                    return 1;
+                case PF_R5G6B5:
+                    return 2;
+                case PF_R8G8B8:
+                case PF_B8G8R8:
+                case PF_BYTE_RGB:
+                    return 3;
+                case PF_A8R8G8B8:
+                case PF_B8G8R8A8:
+                case PF_BYTE_BGRA:
+                    return 4;
+                default:
+                    return 4;
+            }
         }
         static void packColour(const ColourValue& c, PixelFormat format, void* dest)
         {
@@ -957,8 +1090,10 @@ namespace Ogre
         static void bulkPixelConversion(const PixelBox& src, const PixelBox& dst)
         {
             if (!src.data || !dst.data) return;
-            size_t srcBytes = src.width * src.height * 4;
-            size_t dstBytes = dst.width * dst.height * 4;
+            const size_t srcElem = getNumElemBytes(src.format);
+            const size_t dstElem = getNumElemBytes(dst.format);
+            size_t srcBytes = src.width * src.height * srcElem;
+            size_t dstBytes = dst.width * dst.height * dstElem;
             size_t bytes = srcBytes < dstBytes ? srcBytes : dstBytes;
             std::memcpy(dst.data, src.data, bytes);
         }
@@ -981,7 +1116,7 @@ namespace Ogre
     class Texture
     {
     public:
-        Texture() {}
+        Texture() : mWidth(0), mHeight(0), mFormat(PF_UNKNOWN) {}
         class Box
         {
         public:
@@ -1033,9 +1168,30 @@ namespace Ogre
             getBuffer()->setData(mRaw.data());
         }
 
+        void setImageData(uint width, uint height, PixelFormat format, const uchar* src, size_t bytes)
+        {
+            mWidth = width;
+            mHeight = height;
+            mFormat = format;
+            mRaw.assign(bytes, 0);
+            if (src && bytes) {
+                std::memcpy(mRaw.data(), src, bytes);
+            }
+            getBuffer()->setData(mRaw.empty() ? 0 : mRaw.data());
+        }
+
+        uint getWidth() const { return mWidth; }
+        uint getHeight() const { return mHeight; }
+        PixelFormat getFormat() const { return mFormat; }
+        const uchar* getRawData() const { return mRaw.empty() ? 0 : mRaw.data(); }
+        size_t getRawDataSize() const { return mRaw.size(); }
+
     private:
         HardwarePixelBufferSharedPtr mBuffer;
         std::vector<uchar> mRaw;
+        uint mWidth;
+        uint mHeight;
+        PixelFormat mFormat;
     };
 
     typedef Texture::HardwarePixelBufferSharedPtr HardwarePixelBufferSharedPtr;
@@ -1067,12 +1223,14 @@ namespace Ogre
         TexturePtr loadImage(const String& name, const String& group, const Image& image, TextureType type, int mipmaps = 0)
         {
             (void)group;
-            (void)image;
             (void)type;
             (void)mipmaps;
             if (mTextures.find(name) == mTextures.end()) {
                 mTextures[name] = TexturePtr(new Texture());
             }
+            const size_t bytes = image.getSize();
+            const uchar* src = image.getData();
+            mTextures[name]->setImageData(image.getWidth(), image.getHeight(), image.getFormat(), src, bytes);
             return mTextures[name];
         }
         TexturePtr getByName(const String& name, const String& group = "General")
@@ -1082,6 +1240,20 @@ namespace Ogre
                 mTextures[name] = TexturePtr(new Texture());
             }
             return mTextures[name];
+        }
+        TexturePtr getFirstPopulatedTexture(String* outName = 0)
+        {
+            for (std::map<String, TexturePtr>::iterator it = mTextures.begin(); it != mTextures.end(); ++it)
+            {
+                Texture* t = it->second.get();
+                if (t && t->getRawData() && t->getWidth() > 0 && t->getHeight() > 0)
+                {
+                    if (outName)
+                        *outName = it->first;
+                    return it->second;
+                }
+            }
+            return TexturePtr();
         }
         TexturePtr createManual(const String& name, const String& group, TextureType type, uint width, uint height, int mipmaps, PixelFormat format, int usage)
         {

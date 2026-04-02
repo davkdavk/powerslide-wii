@@ -1,5 +1,14 @@
 # Decisions Log
 
+## 2026-04-02 (UV anchoring correction: world-space only fallback)
+- Confirmed terrain UV fallback in stable Wii render path must never depend on camera-space transformed coordinates.
+- Standardized fallback UV generation for batches with missing inline UVs (`hasUV=0`) to world-space planar mapping only:
+  - `u = worldX / 10.0`
+  - `v = worldZ / 10.0`
+- Removed fallback UV clamping that could mask movement-related drift symptoms; keep raw world-anchored tiling for stability and debuggability.
+- Added frame summary logging for UV coverage to measure remaining missing-UV batches:
+  - `[UV_SUMMARY] batches=<N> noUV=<M> scale=10.00`.
+
 ## 2026-04-02 (stability-first crash triage and texture-routing proof strategy)
 - Prioritized hard crash elimination before further texture-correctness tuning; adopted addr2line-driven fix loop on real Wii crash dumps.
 - Kept fixes narrowly scoped and reversible:
