@@ -1,5 +1,22 @@
 # Known Issues / Limitations
 
+## 2026-04-02 current blocker update (post white-texture debug run)
+- Textured terrain can still regress to visually incorrect output even when batch routing executes.
+- In the recent forced per-batch debug run, terrain turned white because binds resolved to placeholder `Loaders/Texture1` instead of populated track textures.
+- Root cause class: terrain texture name mismatch/aliasing between chunk material names (e.g., `*.tex`) and actual loaded Wii texture asset variants (`*_m_1.tex`, etc.).
+- Mitigation now landed: Wii renderer resolves multiple name variants and only accepts textures with valid pixel payload.
+- Validation gap remains until next hardware run confirms placeholder-source binds are eliminated in textured mode.
+
+## 2026-04-02 crash history (now mitigated in current build)
+- Repeated DSI-class null-deref crashes were observed and symbolized in:
+  - `CloneMaterial(...)` (`orig_src/tools/OgreTools.cpp`),
+  - null material-name deref path in `StaticMeshProcesser::createMesh(...)`,
+  - `AddjustNormals(...)` (`orig_src/tools/OgreTools.cpp`).
+- Guard hardening is now applied, but these sites remain sensitive and should be kept under regression watch in future refactors.
+
+## 2026-04-02 operational risk note
+- SD mount/remount churn remains frequent during rapid Wii test loops and can interrupt deploy/log cycles.
+
 ## 2026-04-02 current texture-mapping blocker
 - Terrain textures are now loading and binding in Wii stable mode, but mapping remains incorrect: one texture pattern repeats across wide geometry regions.
 - Per-batch texture selection and UV submission are now wired, but correctness still depends on validating UV quality and expected per-material chunk boundaries in live runs.

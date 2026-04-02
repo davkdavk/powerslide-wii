@@ -26,6 +26,7 @@ static const bool kForceTransformIsolation = true;
 static volatile bool gUseGameplayCameraMode = false;
 static volatile float gCameraYawDeg = 0.0f;
 static volatile bool gEnableRealTerrainTexture = false;
+static volatile bool gTerrainBatchTextureDebug = false;
 #endif
 
 namespace Ogre
@@ -1120,8 +1121,14 @@ namespace WiiGX
             static int sTexDiagLogs = 0;
             static int sTexBindLogs = 0;
             static int sUVRangeLogs = 0;
+            static int sBatchTexLogs = 0;
             const char* kPinnedTerrainTexture = "roadsection2_m_1.tex";
             const char* kPinnedTerrainTextureAlt = "roadsection2.tga";
+            static const char* kDebugBatchTextures[] = {
+                "roadsection2_m_1.tex",
+                "startline_right_m_1.tex",
+                "sandt3dcopy_m_1.tex"
+            };
 
             const u32 drawCountStable = (mTerrainProbeDrawCount < indexCount) ? mTerrainProbeDrawCount : indexCount;
             const bool hasInlineUV = mTerrainDirectUVByIndex.size() >= (static_cast<size_t>(drawCountStable) * 2u);
@@ -1187,20 +1194,69 @@ namespace WiiGX
 
                 if(textureModeRequested)
                 {
-                    const std::string requestedTexture = batch.textureName.empty() ? (mTerrainTextureName.empty() ? std::string(kPinnedTerrainTexture) : mTerrainTextureName) : batch.textureName;
+                    std::string requestedTexture = batch.textureName.empty() ? (mTerrainTextureName.empty() ? std::string(kPinnedTerrainTexture) : mTerrainTextureName) : batch.textureName;
+                    if(gTerrainBatchTextureDebug)
+                    {
+                        const size_t debugCount = sizeof(kDebugBatchTextures) / sizeof(kDebugBatchTextures[0]);
+                        requestedTexture = kDebugBatchTextures[bi % debugCount];
+                    }
                     if(sLoadedTerrainTextureName != requestedTexture)
                         sTerrainTexReady = false;
+
+                    Ogre::TexturePtr resolvedTex;
+                    std::string resolvedName;
+                    {
+                        std::vector<std::string> candidates;
+                        candidates.push_back(requestedTexture);
+
+                        const size_t dot = requestedTexture.find_last_of('.');
+                        const std::string base = (dot == std::string::npos) ? requestedTexture : requestedTexture.substr(0, dot);
+                        if(!base.empty())
+                        {
+                            candidates.push_back(base + "_m_1.tex");
+                            candidates.push_back(base + "_m_2.tex");
+                            candidates.push_back(base + "_m_3.tex");
+                            candidates.push_back(base + ".tga");
+                            candidates.push_back(base + ".png");
+                        }
+
+                        for(size_t ci = 0; ci < candidates.size(); ++ci)
+                        {
+                            Ogre::TexturePtr probe = Ogre::TextureManager::getSingleton().getByName(candidates[ci], "tempRes");
+                            const Ogre::Texture* p = probe.get();
+                            if(p && p->getRawData() && p->getWidth() > 0 && p->getHeight() > 0)
+                            {
+                                resolvedTex = probe;
+                                resolvedName = candidates[ci];
+                                break;
+                            }
+                        }
+                    }
+
+                    if(sBatchTexLogs < 96)
+                    {
+                        WiiDebugLog("[TEX_BATCH] bi=%u start=%u count=%u raw='%s' requested='%s' debug=%d\n",
+                            static_cast<unsigned int>(bi),
+                            static_cast<unsigned int>(batch.indexStart),
+                            static_cast<unsigned int>(batch.indexCount),
+                            batch.textureName.empty() ? "<default>" : batch.textureName.c_str(),
+                            requestedTexture.c_str(),
+                            gTerrainBatchTextureDebug ? 1 : 0);
+                        sBatchTexLogs++;
+                    }
 
                     if(!sTerrainTexReady)
                     {
                         const char* requestedName = requestedTexture.empty() ? kPinnedTerrainTexture : requestedTexture.c_str();
-                        Ogre::TexturePtr tex = Ogre::TextureManager::getSingleton().getByName(requestedName, "tempRes");
+                        Ogre::TexturePtr tex = resolvedTex;
+                        if(!tex.get())
+                            tex = Ogre::TextureManager::getSingleton().getByName(requestedName, "tempRes");
                         const Ogre::Texture* texPtr = tex.get();
                         const unsigned char* src = texPtr ? texPtr->getRawData() : 0;
                         unsigned int srcW = texPtr ? texPtr->getWidth() : 0;
                         unsigned int srcH = texPtr ? texPtr->getHeight() : 0;
                         Ogre::PixelFormat srcFmt = texPtr ? texPtr->getFormat() : Ogre::PF_UNKNOWN;
-                        std::string srcName = requestedName;
+                        std::string srcName = resolvedName.empty() ? std::string(requestedName) : resolvedName;
 
                         if(!(src && srcW > 0 && srcH > 0) && requestedTexture.empty())
                         {
@@ -1296,16 +1352,17 @@ namespace WiiGX
                                 }
                             }
                             DCFlushRange(sTerrainTex565, sizeof(sTerrainTex565));
-                            GX_InitTexObj(&sTerrainTexObj, sTerrainTex565, 128, 128, GX_TF_RGB565, GX_CLAMP, GX_CLAMP, GX_FALSE);
+                            GX_InitTexObj(&sTerrainTexObj, sTerrainTex565, 128, 128, GX_TF_RGB565, GX_REPEAT, GX_REPEAT, GX_FALSE);
                             GX_InitTexObjLOD(&sTerrainTexObj, GX_LINEAR, GX_LINEAR, 0.0f, 0.0f, 0.0f, GX_FALSE, GX_FALSE, GX_ANISO_1);
                             sTerrainTexReady = true;
                             sLoadedTerrainTextureName = requestedTexture;
                             sLoadedTerrainTextureSource = srcName;
                             if(sTexBindLogs < 64)
                             {
-                                WiiDebugLog("[TEX_BIND] requested='%s' source='%s' fmt=%d size=%ux%u\n",
+                                WiiDebugLog("[TEX_BIND] requested='%s' source='%s' chunk='%s' fmt=%d size=%ux%u\n",
                                     requestedName,
                                     srcName.c_str(),
+                                    batch.textureName.empty() ? "<default>" : batch.textureName.c_str(),
                                     static_cast<int>(srcFmt),
                                     srcW,
                                     srcH);
@@ -1380,14 +1437,16 @@ namespace WiiGX
 
                     if(textureModeRequested)
                     {
-                        float outU = fx * 0.0025f;
-                        float outV = fz * 0.0025f;
+                        const float wx = mTerrainDirectVertices[vi * 3 + 0] - centerX;
+                        const float wz = mTerrainDirectVertices[vi * 3 + 2] - centerZ;
+                        float outU = wx * 0.0025f;
+                        float outV = wz * 0.0025f;
                         if(batchHasUV)
                         {
                             const size_t uvIdx = static_cast<size_t>(uvStart + localI) * 2u;
                             const float inU = mTerrainDirectUVByIndex[uvIdx + 0];
                             const float inV = mTerrainDirectUVByIndex[uvIdx + 1];
-                            if((inU == inU) && (inV == inV) && fabsf(inU) <= 64.0f && fabsf(inV) <= 64.0f)
+                            if((inU == inU) && (inV == inV) && fabsf(inU) <= 8192.0f && fabsf(inV) <= 8192.0f)
                             {
                                 outU = inU;
                                 outV = 1.0f - inV;
@@ -1398,10 +1457,13 @@ namespace WiiGX
                             }
                         }
 
-                        if(outU < -64.0f) outU = -64.0f;
-                        if(outU > 64.0f) outU = 64.0f;
-                        if(outV < -64.0f) outV = -64.0f;
-                        if(outV > 64.0f) outV = 64.0f;
+                        if(!batchHasUV)
+                        {
+                            if(outU < -64.0f) outU = -64.0f;
+                            if(outU > 64.0f) outU = 64.0f;
+                            if(outV < -64.0f) outV = -64.0f;
+                            if(outV > 64.0f) outV = 64.0f;
+                        }
                         if(outU < minU) minU = outU;
                         if(outU > maxU) maxU = outU;
                         if(outV < minV) minV = outV;

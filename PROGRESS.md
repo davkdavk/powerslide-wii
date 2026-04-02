@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-04-02 - crash triage streak, reset-to-loader QoL, and terrain texture-name resolution
+
+- Mapped repeated Wii crash dumps with addr2line to concrete null-deref sites and fixed incrementally:
+  - `CloneMaterial(...)` null/invalid material-technique-pass and texture-unit-state paths.
+  - `StaticMeshProcesser` material-name handoff now uses safe fallback names when override materials are null.
+  - `AddjustNormals(...)` now early-outs on null/missing mesh/shared-buffer/vertex-element conditions.
+- Added Wii hardware QoL reset behavior:
+  - RESET/POWER callbacks now request loader return via `SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0)`.
+  - Verified callback trigger in runtime log (`[WII_SYS] reset/power requested, returning to loader`).
+- Ran explicit terrain texture-routing experiment with per-batch forced texture cycling + diagnostics:
+  - added `[TEX_BATCH]` logs for batch->requested texture routing.
+  - confirmed per-batch routing code executes, but debug run produced white terrain when textured mode enabled.
+- Root cause for white-texture debug run identified in log evidence:
+  - texture binds were sourcing placeholder `Loaders/Texture1` instead of populated terrain textures.
+- Implemented terrain texture name-resolution hardening in Wii renderer:
+  - resolve from chunk texture name to `_m_1/_m_2/_m_3`, `.tga`, `.png` variants,
+  - require populated texture payload (`rawData` + valid dimensions) before using it,
+  - disabled forced batch-cycling debug path by default after experiment.
+- Rebuilt and deployed latest `boot.dol` after each major step; current deployed build includes:
+  - crash-hardening patches,
+  - reset-to-loader support,
+  - terrain texture-name resolution fix.
+
 ## 2026-04-02 - per-batch terrain texture+UV reintroduction pass
 
 - User confirmed real terrain textures now load on Wii, but one texture pattern was repeating across most geometry.

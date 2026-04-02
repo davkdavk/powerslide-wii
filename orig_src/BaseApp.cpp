@@ -13,6 +13,7 @@
 #include "customs/CustomTrayManager.h"
 #include "customs/CustomOverlaySystem.h"
 #include "gamelogic/GameModeSwitcher.h"
+#include "WiiDebugLog.h"
 
 #include "physics/PhysicsVehicle.h"
 
@@ -42,6 +43,7 @@
 
 #if defined(WII) || defined(__wii__)
 #include <wiiuse/wpad.h>
+#include <ogc/system.h>
 #endif
 
 
@@ -52,6 +54,17 @@ namespace
 #if defined(WII) || defined(__wii__)
     bool gRenderLoopProbeArmed = false;
     bool gRenderLoopProbeFired = false;
+    volatile bool gWiiReturnToLoaderRequested = false;
+
+    void onWiiResetButton(u32, void*)
+    {
+        gWiiReturnToLoaderRequested = true;
+    }
+
+    void onWiiPowerButton()
+    {
+        gWiiReturnToLoaderRequested = true;
+    }
 
     void quiesceWpadStartup()
     {
@@ -340,6 +353,9 @@ void BaseApp::go(bool isSafeRun)
 #if defined(WII) || defined(__wii__)
     gRenderLoopProbeArmed = false;
     gRenderLoopProbeFired = false;
+    gWiiReturnToLoaderRequested = false;
+    SYS_SetResetCallback(onWiiResetButton);
+    SYS_SetPowerCallback(onWiiPowerButton);
     quiesceWpadStartup();
 #endif
     mGameState.setIsSafeRun(isSafeRun);
@@ -535,6 +551,15 @@ bool BaseApp::frameEnded(const Ogre::FrameEvent &evt)
 
 bool BaseApp::frameRenderingQueued(const Ogre::FrameEvent& evt)
 {
+#if defined(WII) || defined(__wii__)
+    if(gWiiReturnToLoaderRequested)
+    {
+        WiiDebugLog("[WII_SYS] reset/power requested, returning to loader\n");
+        SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
+        return false;
+    }
+#endif
+
     if(!mWindow)
         return false;
 

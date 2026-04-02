@@ -10,16 +10,70 @@
 #endif
 
 Ogre::MaterialPtr CloneMaterial(const Ogre::String& newMaterialName, const Ogre::String& oldMaterialName, 
-                                const std::vector<Ogre::String> texturesNames, 
+                                const std::vector<Ogre::String>& texturesNames, 
                                 float scale,
                                 const Ogre::String& groupName){
 
     Ogre::MaterialPtr material = Ogre::MaterialManager::getSingleton().getByName(oldMaterialName);
 
+    if(material.isNull())
+    {
+#if defined(WII) || defined(__wii__)
+        WiiDebugLog("[CLONE_MAT] missing source material old=%s new=%s\n", oldMaterialName.c_str(), newMaterialName.c_str());
+#endif
+        return Ogre::MaterialPtr();
+    }
+
     Ogre::MaterialPtr materialNew = material->clone(newMaterialName, true, groupName);
 
+    if(materialNew.isNull())
+    {
+#if defined(WII) || defined(__wii__)
+        WiiDebugLog("[CLONE_MAT] clone failed old=%s new=%s\n", oldMaterialName.c_str(), newMaterialName.c_str());
+#endif
+        return Ogre::MaterialPtr();
+    }
+
+    Ogre::Technique* technique = materialNew->getTechnique(0);
+    if(!technique)
+    {
+#if defined(WII) || defined(__wii__)
+        WiiDebugLog("[CLONE_MAT] no technique old=%s new=%s\n", oldMaterialName.c_str(), newMaterialName.c_str());
+#endif
+        return materialNew;
+    }
+
+    Ogre::Pass* pass = technique->getPass(0);
+    if(!pass)
+    {
+#if defined(WII) || defined(__wii__)
+        WiiDebugLog("[CLONE_MAT] no pass old=%s new=%s\n", oldMaterialName.c_str(), newMaterialName.c_str());
+#endif
+        return materialNew;
+    }
+
     for(size_t q = 0; q < texturesNames.size(); ++q){
-        Ogre::TextureUnitState * state = materialNew->getTechnique(0)->getPass(0)->getTextureUnitState(static_cast<Ogre::ushort>(q));
+        Ogre::TextureUnitState * state = 0;
+        if(q < pass->getNumTextureUnitStates())
+        {
+            state = pass->getTextureUnitState(static_cast<Ogre::ushort>(q));
+        }
+        else
+        {
+            state = pass->createTextureUnitState();
+        }
+
+        if(!state)
+        {
+#if defined(WII) || defined(__wii__)
+            WiiDebugLog("[CLONE_MAT] null tex state old=%s new=%s slot=%u\n",
+                oldMaterialName.c_str(),
+                newMaterialName.c_str(),
+                static_cast<unsigned int>(q));
+#endif
+            continue;
+        }
+
         state->setTextureName(texturesNames[q]);
         state->setTextureScale(scale, scale);
 
@@ -242,13 +296,44 @@ void AddjustNormals(Ogre::Entity* entity, Ogre::Real threshold)
     //http://www.bytehazard.com/articles/vertnorm.html
     //https://knowledge.autodesk.com/search-result/caas/CloudHelp/cloudhelp/2015/ENU/Max-SDK/files/GUID-0FCB4578-77F8-4F05-99CD-349E85F13639-htm.html
 
+    if(!entity)
+    {
+#if defined(WII) || defined(__wii__)
+        WiiDebugLog("[MODEL] AddjustNormals: null entity\n");
+#endif
+        return;
+    }
+
     Ogre::Mesh* mesh = entity->getMesh().get();
+    if(!mesh || !mesh->sharedVertexData || !mesh->sharedVertexData->vertexDeclaration || !mesh->sharedVertexData->vertexBufferBinding)
+    {
+#if defined(WII) || defined(__wii__)
+        WiiDebugLog("[MODEL] AddjustNormals: missing mesh/shared data\n");
+#endif
+        return;
+    }
 
     //d.polubotko: assume used shared buffer
     Ogre::VertexData* vertex_data = mesh->sharedVertexData;
     const Ogre::VertexElement* posElem = vertex_data->vertexDeclaration->findElementBySemantic(Ogre::VES_POSITION);
     const Ogre::VertexElement* posNormal = vertex_data->vertexDeclaration->findElementBySemantic(Ogre::VES_NORMAL);
+    if(!posElem || !posNormal)
+    {
+#if defined(WII) || defined(__wii__)
+        WiiDebugLog("[MODEL] AddjustNormals: missing vertex elements\n");
+#endif
+        return;
+    }
+
     Ogre::HardwareVertexBufferSharedPtr vbuf = vertex_data->vertexBufferBinding->getBuffer(posElem->getSource());
+    if(!vbuf || vertex_data->vertexCount == 0)
+    {
+#if defined(WII) || defined(__wii__)
+        WiiDebugLog("[MODEL] AddjustNormals: empty vertex buffer\n");
+#endif
+        return;
+    }
+
     unsigned char* vertex = static_cast<unsigned char*>(vbuf->lock(Ogre::HardwareBuffer::HBL_NORMAL));
 
     size_t countInBox = 0;

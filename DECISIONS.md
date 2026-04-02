@@ -1,5 +1,18 @@
 # Decisions Log
 
+## 2026-04-02 (stability-first crash triage and texture-routing proof strategy)
+- Prioritized hard crash elimination before further texture-correctness tuning; adopted addr2line-driven fix loop on real Wii crash dumps.
+- Kept fixes narrowly scoped and reversible:
+  - null guards in `CloneMaterial(...)`,
+  - safe override-material-name fallback in mesh creation,
+  - defensive early-outs in `AddjustNormals(...)`.
+- Added reset/power callback behavior to return to loader/menu as an operator-efficiency decision for rapid hardware iteration.
+- Chose an explicit proof step for terrain texture routing:
+  - temporary per-batch forced texture cycling + `[TEX_BATCH]` logging,
+  - use visual output + bind logs to distinguish routing failure vs texture-source failure.
+- After white-terrain result, accepted log evidence (`source='Loaders/Texture1'`) as root signal and moved to texture-name resolution hardening instead of changing UV math again.
+- Decision: default forced batch-cycling debug OFF after the experiment; keep diagnostics available but return to normal mapping path for real validation.
+
 ## 2026-04-02 (texture/UV correction strategy after successful texture load)
 - Accepted that current priority is no longer "can textures load" but "can textures map correctly per geometry batch".
 - Chose a guarded UV reintroduction approach in the stable stage-4 Wii renderer:

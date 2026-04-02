@@ -5,7 +5,7 @@
 #include "../includes/OISInclude.h"
 
 Ogre::MaterialPtr CloneMaterial(const Ogre::String& newMaterialName, const Ogre::String& oldMaterialName, 
-                                const std::vector<Ogre::String> texturesNames, 
+                                const std::vector<Ogre::String>& texturesNames, 
                                 float scale = 1.0f,
                                 const Ogre::String& groupName = Ogre::ResourceGroupManager::AUTODETECT_RESOURCE_GROUP_NAME);
 

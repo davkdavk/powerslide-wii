@@ -651,6 +651,21 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
     }
 #endif
 
+    Ogre::String overrideMaterialNameSafe = "Basewhite";
+    Ogre::String overrideMaterialFogNameSafe = "Basewhite";
+    if(!overrideMaterial.isNull())
+    {
+        overrideMaterialNameSafe = overrideMaterial->getName();
+    }
+    if(!overrideMaterialFog.isNull())
+    {
+        overrideMaterialFogNameSafe = overrideMaterialFog->getName();
+    }
+    else
+    {
+        overrideMaterialFogNameSafe = overrideMaterialNameSafe;
+    }
+
     if(!overrideMaterial.isNull()
 #if defined(WII_NATIVE_ASSET_PIPELINE)
         || true
@@ -670,24 +685,27 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
         {
             materialNames = loadWithVertexArray(    isOverrideDefault, 
                                                     defaultTextureName, 
-                                                    overrideMaterial->getName(),
+                                                    overrideMaterialNameSafe,
                                                     overrideMaterialArray->getName(),
                                                     mshData,
                                                     ambient);
         }
         else
         {
-#if defined(WII_NATIVE_ASSET_PIPELINE)
-            materialNames.push_back("Basewhite");
-#else
-            materialNames = loadWithoutVertexArray( isOverrideDefault, 
-                                                    defaultTextureName, 
-                                                    isFogEnabled ? overrideMaterialFog->getName() : overrideMaterial->getName(),
+            materialNames = loadWithoutVertexArray( isOverrideDefault,
+                                                    defaultTextureName,
+                                                    isFogEnabled ? overrideMaterialFogNameSafe : overrideMaterialNameSafe,
                                                     mshData,
                                                     skyColor,
                                                     fogStartEnd,
                                                     ambient,
                                                     isFogEnabled);
+
+#if defined(WII_NATIVE_ASSET_PIPELINE)
+            if(materialNames.empty())
+            {
+                materialNames.push_back("Basewhite");
+            }
 #endif
         }
 
@@ -759,20 +777,32 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                     if(ib >= vertexCount) ++invalidIndexCount;
                     if(ic >= vertexCount) ++invalidIndexCount;
 
-                    const bool hasTexTri = t < mshData.texCoordsIndexes.size();
-                    const u32 ta = hasTexTri ? static_cast<u32>(mshData.texCoordsIndexes[t].a) : 0u;
-                    const u32 tb = hasTexTri ? static_cast<u32>(mshData.texCoordsIndexes[t].b) : 0u;
-                    const u32 tc = hasTexTri ? static_cast<u32>(mshData.texCoordsIndexes[t].c) : 0u;
-                    const bool validTa = hasTexTri && (ta < mshData.texcoords.size());
-                    const bool validTb = hasTexTri && (tb < mshData.texcoords.size());
-                    const bool validTc = hasTexTri && (tc < mshData.texcoords.size());
-                    if(!validTa) ++invalidUvCount;
-                    if(!validTb) ++invalidUvCount;
-                    if(!validTc) ++invalidUvCount;
-
-                    const Ogre::Vector3 uva = validTa ? mshData.texcoords[ta] : Ogre::Vector3::ZERO;
-                    const Ogre::Vector3 uvb = validTb ? mshData.texcoords[tb] : Ogre::Vector3::ZERO;
-                    const Ogre::Vector3 uvc = validTc ? mshData.texcoords[tc] : Ogre::Vector3::ZERO;
+                    Ogre::Vector3 uva = Ogre::Vector3::ZERO;
+                    Ogre::Vector3 uvb = Ogre::Vector3::ZERO;
+                    Ogre::Vector3 uvc = Ogre::Vector3::ZERO;
+                    const bool hasPlainUv = mshData.plainTexCoords.size() >= ((static_cast<size_t>(t) + 1u) * 3u);
+                    if(hasPlainUv)
+                    {
+                        uva = mshData.plainTexCoords[t * 3 + 0];
+                        uvb = mshData.plainTexCoords[t * 3 + 1];
+                        uvc = mshData.plainTexCoords[t * 3 + 2];
+                    }
+                    else
+                    {
+                        const bool hasTexTri = t < mshData.texCoordsIndexes.size();
+                        const u32 ta = hasTexTri ? static_cast<u32>(mshData.texCoordsIndexes[t].a) : 0u;
+                        const u32 tb = hasTexTri ? static_cast<u32>(mshData.texCoordsIndexes[t].b) : 0u;
+                        const u32 tc = hasTexTri ? static_cast<u32>(mshData.texCoordsIndexes[t].c) : 0u;
+                        const bool validTa = hasTexTri && (ta < mshData.texcoords.size());
+                        const bool validTb = hasTexTri && (tb < mshData.texcoords.size());
+                        const bool validTc = hasTexTri && (tc < mshData.texcoords.size());
+                        if(!validTa) ++invalidUvCount;
+                        if(!validTb) ++invalidUvCount;
+                        if(!validTc) ++invalidUvCount;
+                        uva = validTa ? mshData.texcoords[ta] : Ogre::Vector3::ZERO;
+                        uvb = validTb ? mshData.texcoords[tb] : Ogre::Vector3::ZERO;
+                        uvc = validTc ? mshData.texcoords[tc] : Ogre::Vector3::ZERO;
+                    }
                     terrainUvByIndex[(t * 3 + 0) * 2 + 0] = uva.x;
                     terrainUvByIndex[(t * 3 + 0) * 2 + 1] = uva.y;
                     terrainUvByIndex[(t * 3 + 1) * 2 + 0] = uvb.x;
@@ -803,6 +833,7 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                 static int sContractMeshLogs = 0;
                 if(sContractMeshLogs < 128)
                 {
+                    const char* chunkTex = (mshData.textureNames.empty() || mshData.textureNames[0].empty()) ? "<none>" : mshData.textureNames[0].c_str();
                     WiiDebugLog("[CONTRACT][MESH] name=%s verts=%u idx=%u maxIdx=%u invalid=%u invalidUV=%u nonFinite=%u bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
                         entityName.c_str(),
                         static_cast<unsigned int>(vertexCount),
@@ -811,6 +842,11 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                         static_cast<unsigned int>(invalidIndexCount),
                         static_cast<unsigned int>(invalidUvCount),
                         static_cast<unsigned int>(nonFiniteVerts),
+                        minX, minY, minZ, maxX, maxY, maxZ);
+                    WiiDebugLog("[CHUNK_TEXMAP] name=%s tex=%s tris=%u bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
+                        entityName.c_str(),
+                        chunkTex,
+                        static_cast<unsigned int>(mshData.triCount),
                         minX, minY, minZ, maxX, maxY, maxZ);
                     sContractMeshLogs++;
                 }
@@ -937,9 +973,10 @@ std::vector<std::string> StaticMeshProcesser::loadWithVertexArray(bool isOverrid
                                                                   const Ogre::ColourValue& ambient)
 {
     std::vector<std::string> materialNames;
+    const size_t texturesCountSafe = std::min(mshData.texturesCount, mshData.textureNames.size());
 
     //pass for submeshes materials
-    if(mshData.texturesCount == 1)
+    if(texturesCountSafe == 1)
     {
         std::string textureName = mshData.textureNames[0];
 
@@ -959,7 +996,7 @@ std::vector<std::string> StaticMeshProcesser::loadWithVertexArray(bool isOverrid
         {
             materialName = "Test/Transparent";
         }
-        else if(mshData.isDecalTexture[0])
+        else if(!mshData.isDecalTexture.empty() && mshData.isDecalTexture[0])
         {
             std::vector<Ogre::String> texturesSubMat;
 
@@ -993,7 +1030,7 @@ std::vector<std::string> StaticMeshProcesser::loadWithVertexArray(bool isOverrid
         materialNames.push_back(materialName);
     }
 
-    if(mshData.texturesCount > 1)
+    if(texturesCountSafe > 1)
     {
         std::string materialName = "Basewhite";
 
@@ -1002,12 +1039,12 @@ std::vector<std::string> StaticMeshProcesser::loadWithVertexArray(bool isOverrid
         Ogre::TexturePtr tex = Ogre::TextureManager::getSingleton().createManual(texName, 
         TEMP_RESOURCE_GROUP_NAME, 
         Ogre::TEX_TYPE_2D_ARRAY, 
-        256, 256, mshData.texturesCount,
+        256, 256, texturesCountSafe,
         0,
         Ogre::PF_R8G8B8,
         0);
 
-        for (size_t i = 0; i < mshData.texturesCount; i++)
+        for (size_t i = 0; i < texturesCountSafe; i++)
         {
             Ogre::Image terrainTex;
             terrainTex.load(mshData.textureNames[i], TEMP_RESOURCE_GROUP_NAME);
@@ -1036,7 +1073,7 @@ std::vector<std::string> StaticMeshProcesser::loadWithVertexArray(bool isOverrid
 
 
     //textures data indices
-    for(size_t q = 0; q < mshData.texturesCount; ++q)
+    for(size_t q = 0; q < texturesCountSafe; ++q)
     {
         for(size_t w = 0; w < mshData.triCount; ++w)
         {
@@ -1079,9 +1116,10 @@ std::vector<std::string> StaticMeshProcesser::loadWithoutVertexArray(bool isOver
                                                                      bool isFogEnabled)
 {
     std::vector<std::string> materialNames;
+    const size_t texturesCountSafe = std::min(mshData.texturesCount, mshData.textureNames.size());
 
     //pass for submeshes materials
-    for (size_t i = 0; i < mshData.texturesCount; i++)
+    for (size_t i = 0; i < texturesCountSafe; i++)
     {
         std::string textureName = mshData.textureNames[i];
 
@@ -1101,7 +1139,7 @@ std::vector<std::string> StaticMeshProcesser::loadWithoutVertexArray(bool isOver
         {
             materialName = "Test/Transparent";
         }
-        else if(mshData.isDecalTexture[i])
+        else if(i < mshData.isDecalTexture.size() && mshData.isDecalTexture[i])
         {
             std::vector<Ogre::String> texturesSubMat;
 
@@ -1142,7 +1180,10 @@ std::vector<std::string> StaticMeshProcesser::loadWithoutVertexArray(bool isOver
                 1.0f,
                 TEMP_RESOURCE_GROUP_NAME);
 
-            newMat->setAmbient(ambient);
+            if(!newMat.isNull())
+            {
+                newMat->setAmbient(ambient);
+            }
 
             //if(isFogEnabled)
             //{
@@ -1153,9 +1194,9 @@ std::vector<std::string> StaticMeshProcesser::loadWithoutVertexArray(bool isOver
         materialNames.push_back(materialName);
     }
 
-    for(size_t q = 0; q < mshData.texturesCount; ++q)
-    {
-        std::vector<unsigned short> triPlainIndixes;
+        for(size_t q = 0; q < texturesCountSafe; ++q)
+        {
+            std::vector<unsigned short> triPlainIndixes;
 
         for(size_t w = 0; w < mshData.triCount; ++w)
         {
@@ -1167,8 +1208,23 @@ std::vector<std::string> StaticMeshProcesser::loadWithoutVertexArray(bool isOver
             }
         }
 
-        mshData.submeshesTriangleIndixesDiffuse.push_back(triPlainIndixes);
-    }
+            mshData.submeshesTriangleIndixesDiffuse.push_back(triPlainIndixes);
+
+#if defined(WII) || defined(__wii__)
+            static int sSubmeshTexMapLogs = 0;
+            if(sSubmeshTexMapLogs < 256)
+            {
+                const char* slotTex = (q < mshData.textureNames.size()) ? mshData.textureNames[q].c_str() : "<out-of-range>";
+                WiiDebugLog("[SUBMESH_TEXMAP] texSlot=%u tex=%s triIdxCount=%u tris=%u decal=%d\n",
+                    static_cast<unsigned int>(q),
+                    slotTex,
+                    static_cast<unsigned int>(triPlainIndixes.size()),
+                    static_cast<unsigned int>(triPlainIndixes.size() / 3),
+                    (q < mshData.isDecalTexture.size() && mshData.isDecalTexture[q]) ? 1 : 0);
+                sSubmeshTexMapLogs++;
+            }
+#endif
+        }
 
     return materialNames;
 }

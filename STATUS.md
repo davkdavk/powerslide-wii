@@ -2,6 +2,19 @@
 
 ## 2026-04-02 latest status (current)
 
+- Runtime stability improved versus prior hour's crashes: previously repeated null-deref faults in material/normal paths were patched and latest runs proceed to terrain rendering.
+- New QoL behavior is active on Wii: hardware RESET/POWER now returns to loader/menu (no power-cycle required).
+- Current visual blocker is now strictly textured-terrain correctness:
+  - textured mode can still appear globally wrong (sand-everywhere baseline),
+  - debug forced per-batch texture mode produced all-white terrain due to placeholder texture source usage.
+- Log-backed diagnosis from latest run:
+  - `[TEX_BATCH]` confirms per-batch texture routing code executes,
+  - `[TEX_BIND] ... source='Loaders/Texture1'` in white run confirmed placeholder source was being sampled,
+  - mixed `hasUV=1` and `hasUV=0` batches are present; UV path is partially valid but not final-correct.
+- Latest code change (now deployed): terrain texture-name resolution now tries chunk-name variants (`_m_1/_m_2/_m_3/.tga/.png`) and only accepts populated texture payloads.
+- Current immediate verification target on hardware:
+  - with forced debug cycling disabled, confirm whether textured mode returns to non-white output and whether mapping improves beyond sand-dominant appearance.
+
 - Real Wii texture path now binds loaded terrain textures in stable mode; user confirmed visible texture content (no longer flat shading only).
 - Current active blocker changed from texture-load failure to mapping correctness:
   - texture pattern repeats broadly across geometry when texture mode is enabled.
