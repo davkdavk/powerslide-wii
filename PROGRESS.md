@@ -1,5 +1,30 @@
 # Progress
 
+## 2026-04-01 - current pass update (keep history, refresh latest)
+
+- Kept full historical entries intact; added this top entry as the current state snapshot.
+- Confirmed pipeline progression moved past prior index-empty blocker:
+  - direct chunk uploads now occur (`[GXDIR] uploading chunk...`),
+  - terrain renderer receives valid payload (`dataValid=1`, `verts=61179`, `indices=61179`),
+  - indexed draw executes with `invalid=0`.
+- Applied render-path hardening in `wii_stubs/OGRE/WiiGXRenderer.cpp`:
+  - removed mixed immediate/indexed vertex submission,
+  - re-applied vertex descriptor/format state per terrain draw,
+  - kept FIFO-safe index emission behavior.
+- Tested a temporary sequential-topology draw experiment; result worsened into center-spike/starburst behavior, then reverted back to indexed topology.
+- Attempted null-physics recovery by stepping world in null branch; Dolphin crash confirmed this path is unsafe in current init state.
+  - Symbolized crash PC: `0x80066bd8` -> vector math in `OgreSceneManager.h` via `Physics::timeStep`.
+  - Reverted that recovery attempt.
+- Added current Wii-only visibility probe build:
+  - fixed yellow test triangle in terrain pass,
+  - terrain draw capped to 900 indices,
+  - added `maxDrawnIndex` logging.
+  - build hash: `971a195fac0247c1532b675b9295c85abe4d6ba3ccb1030a272ea0f069007966`.
+- Repository management completed:
+  - repo renamed to `davkdavk/powerslide-wii`,
+  - recreated as a true fork of `dm999/powerslideremake`,
+  - active work branch pushed as `wii-port`.
+
 ## 2026-04-01 - systematic runtime pipeline and dependency audit
 
 - Documented canonical race boot/load/render order across `Main` -> `BaseApp` -> `GameModeSwitcher` -> `BaseRaceMode` staged init.

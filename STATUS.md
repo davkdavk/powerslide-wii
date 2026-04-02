@@ -1,5 +1,24 @@
 # STATUS REPORT - 2026-04-01
 
+## 2026-04-01 latest status (current)
+
+- Terrain data upload path is now active in native mode on real Wii logs:
+  - `[GXDIR] uploading chunk...` present.
+  - `[TERRAIN_RENDER] entry dataValid=1 verts=61179 indices=61179` present.
+  - `[TERRAIN_RENDER] indexed topology ... invalid=0` present.
+  - `[TERRAIN_RENDER] draw complete` present.
+- Current real Wii visual symptom: geometry is not stable terrain; user reports moving/stretched/random triangles.
+- Current Dolphin symptom: usually clear blue/red with no persistent terrain polys; one run hit a crash screen during an experimental null-physics recovery change.
+- Crash root cause from that experiment was symbolized and confirmed:
+  - `PC=0x80066bd8` -> `Ogre::Vector3::operator-` in `wii_stubs/OGRE/OgreSceneManager.h:82`, called from `Physics::timeStep` (`orig_src/physics/Physics.cpp`).
+  - The risky null-physics `timeStep` recovery in `BaseRaceMode::frameStarted` was reverted.
+- Current active test build (not yet confirmed on Wii due SD read-only remount churn):
+  - adds a fixed yellow on-screen test triangle in `renderTerrainBuffer()`,
+  - limits terrain draw to first 900 indices (300 triangles),
+  - logs `maxDrawnIndex` for the drawn subset.
+  - local hash: `971a195fac0247c1532b675b9295c85abe4d6ba3ccb1030a272ea0f069007966`.
+- Current blocker is no longer missing indices; it is final render correctness on real hardware (likely transform/state/space mismatch under Wii GX runtime conditions).
+
 ## 0. Canonical Runtime Order (Systematic)
 
 This is the normal in-engine order for a race boot in this branch:

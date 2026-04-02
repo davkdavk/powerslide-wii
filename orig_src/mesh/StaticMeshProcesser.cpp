@@ -734,11 +734,64 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                     terrainVerts[v * 3 + 2] = mshData.vertexes[v].z;
                 }
                 terrainIndices.resize(indexCount);
+                u32 maxIndex = 0;
+                u32 invalidIndexCount = 0;
                 for(u32 t = 0; t < mshData.triCount; ++t)
                 {
-                    terrainIndices[t * 3 + 0] = static_cast<u32>(mshData.triIndexes[t].a);
-                    terrainIndices[t * 3 + 1] = static_cast<u32>(mshData.triIndexes[t].b);
-                    terrainIndices[t * 3 + 2] = static_cast<u32>(mshData.triIndexes[t].c);
+                    const u32 ia = static_cast<u32>(mshData.triIndexes[t].a);
+                    const u32 ib = static_cast<u32>(mshData.triIndexes[t].b);
+                    const u32 ic = static_cast<u32>(mshData.triIndexes[t].c);
+                    terrainIndices[t * 3 + 0] = ia;
+                    terrainIndices[t * 3 + 1] = ib;
+                    terrainIndices[t * 3 + 2] = ic;
+                    if(ia > maxIndex) maxIndex = ia;
+                    if(ib > maxIndex) maxIndex = ib;
+                    if(ic > maxIndex) maxIndex = ic;
+                    if(ia >= vertexCount) ++invalidIndexCount;
+                    if(ib >= vertexCount) ++invalidIndexCount;
+                    if(ic >= vertexCount) ++invalidIndexCount;
+                }
+
+                float minX = 1.0e30f, minY = 1.0e30f, minZ = 1.0e30f;
+                float maxX = -1.0e30f, maxY = -1.0e30f, maxZ = -1.0e30f;
+                u32 nonFiniteVerts = 0;
+                for(u32 v = 0; v < vertexCount; ++v)
+                {
+                    const float x = terrainVerts[v * 3 + 0];
+                    const float y = terrainVerts[v * 3 + 1];
+                    const float z = terrainVerts[v * 3 + 2];
+                    const bool finite = (x == x) && (y == y) && (z == z);
+                    if(!finite)
+                    {
+                        ++nonFiniteVerts;
+                        continue;
+                    }
+                    if(x < minX) minX = x; if(x > maxX) maxX = x;
+                    if(y < minY) minY = y; if(y > maxY) maxY = y;
+                    if(z < minZ) minZ = z; if(z > maxZ) maxZ = z;
+                }
+
+                static int sContractMeshLogs = 0;
+                if(sContractMeshLogs < 128)
+                {
+                    WiiDebugLog("[CONTRACT][MESH] name=%s verts=%u idx=%u maxIdx=%u invalid=%u nonFinite=%u bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
+                        entityName.c_str(),
+                        static_cast<unsigned int>(vertexCount),
+                        static_cast<unsigned int>(indexCount),
+                        static_cast<unsigned int>(maxIndex),
+                        static_cast<unsigned int>(invalidIndexCount),
+                        static_cast<unsigned int>(nonFiniteVerts),
+                        minX, minY, minZ, maxX, maxY, maxZ);
+                    sContractMeshLogs++;
+                }
+
+                if(invalidIndexCount > 0)
+                {
+                    WiiDebugLog("[CONTRACT][MESH][FAIL] name=%s invalid=%u maxIdx=%u verts=%u\n",
+                        entityName.c_str(),
+                        static_cast<unsigned int>(invalidIndexCount),
+                        static_cast<unsigned int>(maxIndex),
+                        static_cast<unsigned int>(vertexCount));
                 }
 
                 WiiGX::Renderer::getInstance().uploadTerrainIndexedData(

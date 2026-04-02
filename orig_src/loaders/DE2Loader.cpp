@@ -844,6 +844,58 @@ namespace DE2
                 mshData.triIndexes[q].c = TriTex[q].v2;
             }
 
+#if defined(WII) || defined(__wii__)
+            Ogre::uint32 maxTriIndex = 0;
+            for(size_t q = 0; q < DataDE2.Data_Parts[PartIndex].Triangles; ++q)
+            {
+                const Ogre::uint32 a = static_cast<Ogre::uint32>(TriTex[q].v0);
+                const Ogre::uint32 b = static_cast<Ogre::uint32>(TriTex[q].v1);
+                const Ogre::uint32 c = static_cast<Ogre::uint32>(TriTex[q].v2);
+                if(a > maxTriIndex) maxTriIndex = a;
+                if(b > maxTriIndex) maxTriIndex = b;
+                if(c > maxTriIndex) maxTriIndex = c;
+            }
+
+            float minX = 1.0e30f, minY = 1.0e30f, minZ = 1.0e30f;
+            float maxX = -1.0e30f, maxY = -1.0e30f, maxZ = -1.0e30f;
+            Ogre::uint32 nonFiniteVerts = 0;
+            for(size_t q = 0; q < Vertexes.size(); ++q)
+            {
+                const float x = Vertexes[q].x;
+                const float y = Vertexes[q].y;
+                const float z = Vertexes[q].z;
+                const bool finite = (x == x) && (y == y) && (z == z);
+                if(!finite)
+                {
+                    ++nonFiniteVerts;
+                    continue;
+                }
+                if(x < minX) minX = x; if(x > maxX) maxX = x;
+                if(y < minY) minY = y; if(y > maxY) maxY = y;
+                if(z < minZ) minZ = z; if(z > maxZ) maxZ = z;
+            }
+
+            static int sDe2ContractLogs = 0;
+            if(sDe2ContractLogs < 64)
+            {
+                WiiDebugLog("[CONTRACT][DE2] part=%u verts=%u tris=%u maxIdx=%u nonFinite=%u bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
+                    static_cast<unsigned int>(PartIndex),
+                    static_cast<unsigned int>(mshData.vertCount),
+                    static_cast<unsigned int>(mshData.triCount),
+                    static_cast<unsigned int>(maxTriIndex),
+                    static_cast<unsigned int>(nonFiniteVerts),
+                    minX, minY, minZ, maxX, maxY, maxZ);
+                sDe2ContractLogs++;
+            }
+            if(maxTriIndex >= mshData.vertCount)
+            {
+                WiiDebugLog("[CONTRACT][DE2][FAIL] part=%u maxIdx=%u vertCount=%u\n",
+                    static_cast<unsigned int>(PartIndex),
+                    static_cast<unsigned int>(maxTriIndex),
+                    static_cast<unsigned int>(mshData.vertCount));
+            }
+#endif
+
             for(size_t q = 0; q < TexC.size(); q++)
             {
                 mshData.texcoords[q].x = TexC[q].uv;

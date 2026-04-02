@@ -1,5 +1,13 @@
 # Decisions Log
 
+## 2026-04-01 (current diagnostic decisions)
+- Keep full historical records; add top-of-file current-state entries instead of rewriting prior logs.
+- Treat real Wii output/logs as primary truth for render bring-up; Dolphin remains useful for crash symbolization and quick smoke checks but not final visual parity.
+- Maintain strict systematic iteration: one controlled probe change per step, then redeploy and validate.
+- Do not force physics stepping in the `playerPhysics == null` path during native bring-up; previous attempt produced reproducible crash path in physics/vector math and was reverted.
+- Continue with render-path isolation probes inside `renderTerrainBuffer()` (known on-screen test primitive + limited terrain subset + explicit draw-range logs) before further architecture changes.
+- Preserve indexed topology as the authoritative terrain draw mode for current data; prior sequential-topology experiment produced center-spike artifacts and was discarded.
+
 ## 2026-03-28
 - Kept the existing OGRE compatibility-layer strategy instead of attempting a direct large-scale source rewrite; this is the fastest path to reach Milestone 1 (all translation units compiling).
 - Prioritized API-surface shims in this order: overlay/UI and material/font APIs first, then matrix/scene gaps, then DataStream parity. This follows the current highest-frequency compile blockers.

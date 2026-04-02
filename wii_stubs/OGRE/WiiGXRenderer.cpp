@@ -16,6 +16,11 @@
 
 #if defined(WII) || defined(__wii__)
 #define OSReport SYS_Report
+#ifndef WII_TERRAIN_DIAG_STAGE
+#define WII_TERRAIN_DIAG_STAGE 4
+#endif
+static volatile int gWiiTerrainDiagStage = WII_TERRAIN_DIAG_STAGE;
+static const bool kForceTransformIsolation = true;
 #endif
 
 namespace Ogre
@@ -80,7 +85,8 @@ namespace WiiGX
            mCameraOffsetZ(0.0f),
            mChunkR(1.0f),
            mChunkG(0.2f),
-           mChunkB(0.2f)
+           mChunkB(0.2f),
+           mFramePresentEnabled(true)
     {
     }
 
@@ -216,6 +222,7 @@ namespace WiiGX
         if (!sScreenMode) {
             return;
         }
+        GX_SetDrawDone();
         GXColor bg = {mClearColor[0], mClearColor[1], mClearColor[2], 255};
         GX_SetCopyClear(bg, 0x00FFFFFF);
         GX_SetViewport(0, 0, sScreenMode->fbWidth, sScreenMode->efbHeight, 0, 1.0f);
@@ -228,9 +235,24 @@ namespace WiiGX
         if (!sScreenMode) {
             return;
         }
+        if(!mFramePresentEnabled)
+        {
+            return;
+        }
         GX_DrawDone();
-        sReadyForCopy = GX_TRUE;
+        GX_SetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
+        GX_SetColorUpdate(GX_TRUE);
+        GX_CopyDisp(sFrameBuffer, GX_TRUE);
+        GX_Flush();
+        sReadyForCopy = GX_FALSE;
+        VIDEO_SetNextFramebuffer(sFrameBuffer);
+        VIDEO_Flush();
         VIDEO_WaitVSync();
+    }
+
+    void Renderer::setFramePresentEnabled(bool enable)
+    {
+        mFramePresentEnabled = enable;
     }
     
     void Renderer::setClearColor(u8 r, u8 g, u8 b, u8 a)
@@ -695,7 +717,47 @@ namespace WiiGX
     void Renderer::renderTerrainBuffer()
     {
         OSReport("[TERRAIN] render vertCount=%d\n", static_cast<int>(mTerrainVertexCount));
-        updateCameraFromInput();
+        if(gWiiTerrainDiagStage >= 4)
+            updateCameraFromInput();
+
+        if(gWiiTerrainDiagStage == 1)
+        {
+            Mtx ident;
+            Mtx44 ortho;
+            guMtxIdentity(ident);
+            guOrtho(ortho, 0.0f, 480.0f, 0.0f, 640.0f, 0.0f, 1.0f);
+            GX_LoadProjectionMtx(ortho, GX_ORTHOGRAPHIC);
+            GX_LoadPosMtxImm(ident, GX_PNMTX0);
+            GX_SetCurrentMtx(GX_PNMTX0);
+
+            GX_ClearVtxDesc();
+            GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
+            GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+            GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_S16, 0);
+            GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+            GX_SetNumChans(1);
+            GX_SetNumTexGens(0);
+            GX_SetNumTevStages(1);
+            GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+            GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+            GX_SetZMode(GX_FALSE, GX_ALWAYS, GX_FALSE);
+            GX_SetCullMode(GX_CULL_NONE);
+
+            GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
+            GX_Position3s16(0, 0, 0);     GX_Color4u8(255, 255, 0, 255);
+            GX_Position3s16(640, 0, 0);   GX_Color4u8(255, 255, 0, 255);
+            GX_Position3s16(640, 480, 0); GX_Color4u8(255, 255, 0, 255);
+            GX_Position3s16(0, 480, 0);   GX_Color4u8(255, 255, 0, 255);
+            GX_End();
+
+            static int sStage1Log = 0;
+            if(sStage1Log < 3)
+            {
+                WiiDebugLog("[VISDBG] stage1 fullscreen quad drawn\n");
+                sStage1Log++;
+            }
+            return;
+        }
 
         mTerrainProbeRenderCalled = true;
 
@@ -726,6 +788,39 @@ namespace WiiGX
         const u32 indexCount = static_cast<u32>(mTerrainDirectIndices.size());
         const u32 vertexCount = static_cast<u32>(mTerrainDirectVertices.size() / 3);
         mTerrainProbeDrawCount = (indexCount / 3) * 3;
+
+        u32 maxIndex = 0;
+        for(u32 i = 0; i < indexCount; ++i)
+        {
+            if(mTerrainDirectIndices[i] > maxIndex)
+                maxIndex = mTerrainDirectIndices[i];
+        }
+        u32 nonFiniteVerts = 0;
+        for(u32 v = 0; v < vertexCount; ++v)
+        {
+            const float x = mTerrainDirectVertices[v * 3 + 0];
+            const float y = mTerrainDirectVertices[v * 3 + 1];
+            const float z = mTerrainDirectVertices[v * 3 + 2];
+            if(!((x == x) && (y == y) && (z == z)))
+                ++nonFiniteVerts;
+        }
+        static int sContractRenderLogs = 0;
+        if(sContractRenderLogs < 16)
+        {
+            WiiDebugLog("[CONTRACT][RENDER] stage=%d verts=%u idx=%u maxIdx=%u nonFinite=%u\n",
+                gWiiTerrainDiagStage,
+                static_cast<unsigned int>(vertexCount),
+                static_cast<unsigned int>(indexCount),
+                static_cast<unsigned int>(maxIndex),
+                static_cast<unsigned int>(nonFiniteVerts));
+            sContractRenderLogs++;
+        }
+        if(maxIndex >= vertexCount)
+        {
+            WiiDebugLog("[CONTRACT][RENDER][FAIL] maxIdx=%u verts=%u\n",
+                static_cast<unsigned int>(maxIndex),
+                static_cast<unsigned int>(vertexCount));
+        }
 
         const f32 useX = mCarStartX != 0.0f ? mCarStartX : mTerrainFocusX;
         const f32 useY = mCarStartY != 0.0f ? mCarStartY : mTerrainFocusY;
@@ -759,29 +854,60 @@ namespace WiiGX
             WiiDebugLog("[TERRAIN_RENDER] carStart=(%.1f,%.1f,%.1f) terrainFocus=(%.1f,%.1f,%.1f)\n",
                 mCarStartX, mCarStartY, mCarStartZ,
                 mTerrainFocusX, mTerrainFocusY, mTerrainFocusZ);
-            WiiDebugLog("[TERRAIN_RENDER] camera at (%.1f,%.1f,%.1f) looking at (%.1f,%.1f,%.1f) fwd=(%.2f,%.2f,%.2f)\n",
-                useX - fwdX * cameraBackDist + mCameraOffsetX,
-                useY + cameraHeight + mCameraOffsetY,
-                useZ - fwdZ * cameraBackDist + mCameraOffsetZ,
-                useX + fwdX * lookAheadDist + mCameraOffsetX,
-                useY + 15.0f + mCameraOffsetY,
-                useZ + fwdZ * lookAheadDist + mCameraOffsetZ,
-                fwdX, fwdY, fwdZ);
             sCamLogCounter++;
         }
 
         Mtx view;
         Mtx modelView;
-        const f32 focusX = useX + fwdX * lookAheadDist + mCameraOffsetX;
-        const f32 focusY = useY + 15.0f + mCameraOffsetY;
-        const f32 focusZ = useZ + fwdZ * lookAheadDist + mCameraOffsetZ;
+        float minX = 1.0e30f, minY = 1.0e30f, minZ = 1.0e30f;
+        float maxX = -1.0e30f, maxY = -1.0e30f, maxZ = -1.0e30f;
+        for(u32 v = 0; v < vertexCount; ++v)
+        {
+            const float x = mTerrainDirectVertices[v * 3 + 0];
+            const float y = mTerrainDirectVertices[v * 3 + 1];
+            const float z = mTerrainDirectVertices[v * 3 + 2];
+            if(x < minX) minX = x;
+            if(x > maxX) maxX = x;
+            if(y < minY) minY = y;
+            if(y > maxY) maxY = y;
+            if(z < minZ) minZ = z;
+            if(z > maxZ) maxZ = z;
+        }
+
+        const f32 centerX = (minX + maxX) * 0.5f;
+        const f32 centerY = (minY + maxY) * 0.5f;
+        const f32 centerZ = (minZ + maxZ) * 0.5f;
+
+        const bool fixedCam = kForceTransformIsolation ? true : (gWiiTerrainDiagStage <= 3);
+        const f32 focusX = fixedCam ? centerX : (useX + fwdX * lookAheadDist + mCameraOffsetX);
+        const f32 focusY = fixedCam ? centerY : (useY + 15.0f + mCameraOffsetY);
+        const f32 focusZ = fixedCam ? centerZ : (useZ + fwdZ * lookAheadDist + mCameraOffsetZ);
         guVector camera = {
-            useX - fwdX * cameraBackDist + mCameraOffsetX,
-            useY + cameraHeight + mCameraOffsetY,
-            useZ - fwdZ * cameraBackDist + mCameraOffsetZ
+            fixedCam ? centerX : (useX - fwdX * cameraBackDist + mCameraOffsetX),
+            fixedCam ? (maxY + 900.0f) : (useY + cameraHeight + mCameraOffsetY),
+            fixedCam ? centerZ : (useZ - fwdZ * cameraBackDist + mCameraOffsetZ)
         };
         guVector up = {0.0f, 1.0f, 0.0f};
         guVector look = {focusX, focusY, focusZ};
+
+        static int sCamActualLogCounter = 0;
+        if(sCamActualLogCounter < 3)
+        {
+            WiiDebugLog("[TERRAIN_RENDER] camera at (%.1f,%.1f,%.1f) looking at (%.1f,%.1f,%.1f) fwd=(%.2f,%.2f,%.2f)\n",
+                camera.x, camera.y, camera.z,
+                look.x, look.y, look.z,
+                fwdX, fwdY, fwdZ);
+            WiiDebugLog("[TERRAIN_XFORM] fixedCam=%d forceIsolation=%d\n", fixedCam ? 1 : 0, kForceTransformIsolation ? 1 : 0);
+            WiiDebugLog("[TERRAIN_XFORM] bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f) center=(%.1f,%.1f,%.1f)\n",
+                minX, minY, minZ, maxX, maxY, maxZ, centerX, centerY, centerZ);
+            sCamActualLogCounter++;
+        }
+
+        Mtx44 projection;
+        const float aspect = (CONF_GetAspectRatio() == CONF_ASPECT_16_9) ? (16.0f / 9.0f) : (4.0f / 3.0f);
+        guPerspective(projection, 60.0f, aspect, 1.0f, 20000.0f);
+        GX_LoadProjectionMtx(projection, GX_PERSPECTIVE);
+
         guLookAt(view, &camera, &up, &look);
 
         guMtxIdentity(modelView);
@@ -801,6 +927,165 @@ namespace WiiGX
         GX_SetNumTevStages(1);
         GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
         GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+
+        if(gWiiTerrainDiagStage == 2)
+        {
+            Mtx ident;
+            guMtxIdentity(ident);
+            GX_LoadPosMtxImm(ident, GX_PNMTX0);
+            GX_SetCurrentMtx(GX_PNMTX0);
+
+            Mtx44 persp;
+            const float aspect2 = (CONF_GetAspectRatio() == CONF_ASPECT_16_9) ? (16.0f / 9.0f) : (4.0f / 3.0f);
+            guPerspective(persp, 60.0f, aspect2, 1.0f, 5000.0f);
+            GX_LoadProjectionMtx(persp, GX_PERSPECTIVE);
+
+            GX_ClearVtxDesc();
+            GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
+            GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+            GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_S16, 0);
+            GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+            GX_SetZMode(GX_FALSE, GX_ALWAYS, GX_FALSE);
+            GX_SetCullMode(GX_CULL_NONE);
+            GX_SetLineWidth(48, GX_TO_ONE);
+
+            // Big camera-space triangle: should always be visible if 3D transform path works.
+            GX_Begin(GX_TRIANGLES, GX_VTXFMT0, 3);
+            GX_Position3s16(-300, -180, -700); GX_Color4u8(255, 0, 255, 255);
+            GX_Position3s16( 300, -180, -700); GX_Color4u8(255, 0, 255, 255);
+            GX_Position3s16(   0,  240, -700); GX_Color4u8(255, 0, 255, 255);
+            GX_End();
+
+            // Big camera-space axis lines.
+            GX_Begin(GX_LINES, GX_VTXFMT0, 6);
+            GX_Position3s16(-500, 0, -700); GX_Color4u8(255, 0, 0, 255);
+            GX_Position3s16( 500, 0, -700); GX_Color4u8(255, 0, 0, 255);
+
+            GX_Position3s16(0, -500, -700); GX_Color4u8(0, 255, 0, 255);
+            GX_Position3s16(0,  500, -700); GX_Color4u8(0, 255, 0, 255);
+
+            GX_Position3s16(0, 0, -1200); GX_Color4u8(0, 128, 255, 255);
+            GX_Position3s16(0, 0,  -200); GX_Color4u8(0, 128, 255, 255);
+            GX_End();
+
+            // Draw an indexed terrain subset transformed into camera space.
+            if(mTerrainDirectDataValid && vertexCount > 0 && !mTerrainDirectIndices.empty())
+            {
+                const u32 triVerts = (mTerrainProbeDrawCount > 300u) ? 300u : mTerrainProbeDrawCount;
+                u16 lastValid = 0;
+                u32 invalid = 0;
+                GX_Begin(GX_TRIANGLES, GX_VTXFMT0, triVerts);
+                for(u32 i = 0; i < triVerts; ++i)
+                {
+                    const u32 idxRaw = mTerrainDirectIndices[i];
+                    const u32 vi = (idxRaw < vertexCount) ? idxRaw : static_cast<u32>(lastValid);
+                    if(idxRaw >= vertexCount)
+                        ++invalid;
+                    lastValid = static_cast<u16>(vi);
+
+                    const float fx = mTerrainDirectVertices[vi * 3 + 0] - centerX;
+                    const float fy = mTerrainDirectVertices[vi * 3 + 1] - centerY;
+                    const float fz = mTerrainDirectVertices[vi * 3 + 2] - centerZ - 1200.0f;
+
+                    const s16 sx = (fx < -32768.0f) ? static_cast<s16>(-32768) : ((fx > 32767.0f) ? static_cast<s16>(32767) : static_cast<s16>(fx));
+                    const s16 sy = (fy < -32768.0f) ? static_cast<s16>(-32768) : ((fy > 32767.0f) ? static_cast<s16>(32767) : static_cast<s16>(fy));
+                    const s16 sz = (fz < -32768.0f) ? static_cast<s16>(-32768) : ((fz > 32767.0f) ? static_cast<s16>(32767) : static_cast<s16>(fz));
+
+                    GX_Position3s16(sx, sy, sz);
+                    GX_Color4u8(0, 255, 255, 255);
+                }
+                GX_End();
+
+                static int sStage2SubsetLog = 0;
+                if(sStage2SubsetLog < 3)
+                {
+                    WiiDebugLog("[VISDBG] stage2 indexed terrain subset drawn verts=%u invalid=%u\n",
+                        static_cast<unsigned int>(triVerts),
+                        static_cast<unsigned int>(invalid));
+                    sStage2SubsetLog++;
+                }
+            }
+
+            static int sStage2Log = 0;
+            if(sStage2Log < 3)
+            {
+                WiiDebugLog("[VISDBG] stage2 camera-space 3D primitives + terrain subset drawn\n");
+                sStage2Log++;
+            }
+            return;
+        }
+
+        // Stable baseline path: draw terrain in centered camera-space.
+        if(gWiiTerrainDiagStage >= 4)
+        {
+            Mtx ident;
+            guMtxIdentity(ident);
+            GX_LoadPosMtxImm(ident, GX_PNMTX0);
+            GX_SetCurrentMtx(GX_PNMTX0);
+
+            Mtx44 persp;
+            const float aspect2 = (CONF_GetAspectRatio() == CONF_ASPECT_16_9) ? (16.0f / 9.0f) : (4.0f / 3.0f);
+            guPerspective(persp, 60.0f, aspect2, 1.0f, 20000.0f);
+            GX_LoadProjectionMtx(persp, GX_PERSPECTIVE);
+
+            GX_ClearVtxDesc();
+            GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
+            GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+            GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_S16, 0);
+            GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+            GX_SetNumChans(1);
+            GX_SetNumTexGens(0);
+            GX_SetNumTevStages(1);
+            GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+            GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+            GX_SetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
+            GX_SetCullMode(GX_CULL_NONE);
+
+            const u32 drawCountStable = mTerrainProbeDrawCount;
+            u16 lastValid = 0;
+            u32 invalid = 0;
+            GX_Begin(GX_TRIANGLES, GX_VTXFMT0, drawCountStable);
+            for(u32 i = 0; i < drawCountStable; ++i)
+            {
+                const u32 idxRaw = mTerrainDirectIndices[i];
+                const u32 vi = (idxRaw < vertexCount) ? idxRaw : static_cast<u32>(lastValid);
+                if(idxRaw >= vertexCount)
+                    ++invalid;
+                lastValid = static_cast<u16>(vi);
+
+                const float fx = (mTerrainDirectVertices[vi * 3 + 0] - centerX) - mCameraOffsetX;
+                const float fy = (mTerrainDirectVertices[vi * 3 + 1] - centerY) - mCameraOffsetY;
+                const float fz = (mTerrainDirectVertices[vi * 3 + 2] - centerZ - 1200.0f) - mCameraOffsetZ;
+                const float wy = mTerrainDirectVertices[vi * 3 + 1];
+
+                const s16 sx = (fx < -32768.0f) ? static_cast<s16>(-32768) : ((fx > 32767.0f) ? static_cast<s16>(32767) : static_cast<s16>(fx));
+                const s16 sy = (fy < -32768.0f) ? static_cast<s16>(-32768) : ((fy > 32767.0f) ? static_cast<s16>(32767) : static_cast<s16>(fy));
+                const s16 sz = (fz < -32768.0f) ? static_cast<s16>(-32768) : ((fz > 32767.0f) ? static_cast<s16>(32767) : static_cast<s16>(fz));
+
+                const float yRange = (maxY > minY) ? (maxY - minY) : 1.0f;
+                float t = (wy - minY) / yRange;
+                if(t < 0.0f) t = 0.0f;
+                if(t > 1.0f) t = 1.0f;
+                const u8 cR = static_cast<u8>(20.0f + 110.0f * t);
+                const u8 cG = static_cast<u8>(90.0f + 150.0f * t);
+                const u8 cB = static_cast<u8>(120.0f + 120.0f * t);
+
+                GX_Position3s16(sx, sy, sz);
+                GX_Color4u8(cR, cG, cB, 255);
+            }
+            GX_End();
+
+            static int sStableLog = 0;
+            if(sStableLog < 5)
+            {
+                WiiDebugLog("[VISDBG] stable centered terrain drawn verts=%u invalid=%u center=(%.1f,%.1f,%.1f)\n",
+                    static_cast<unsigned int>(drawCountStable),
+                    static_cast<unsigned int>(invalid),
+                    centerX, centerY, centerZ);
+                sStableLog++;
+            }
+            return;
+        }
 
         static s16 terrainVerts[WIIGX_MAX_TERRAIN_VERTICES * 3] ATTRIBUTE_ALIGN(32);
         static u8 terrainColors[WIIGX_MAX_TERRAIN_VERTICES * 4] ATTRIBUTE_ALIGN(32);
@@ -842,39 +1127,152 @@ namespace WiiGX
                 mTerrainDirectVertices[0],
                 mTerrainDirectVertices[1],
                 mTerrainDirectVertices[2]);
+            WiiDebugLog("[TERRAIN_RENDER] verts[0]=(%.2f,%.2f,%.2f) verts[1]=(%.2f,%.2f,%.2f) verts[2]=(%.2f,%.2f,%.2f)\n",
+                mTerrainDirectVertices[0], mTerrainDirectVertices[1], mTerrainDirectVertices[2],
+                mTerrainDirectVertices[3], mTerrainDirectVertices[4], mTerrainDirectVertices[5],
+                mTerrainDirectVertices[6], mTerrainDirectVertices[7], mTerrainDirectVertices[8]);
             sDrawLogCounter++;
+        }
+
+        static s16 testVerts[9] ATTRIBUTE_ALIGN(32) = {
+            -80, 30, -220,
+             80, 30, -220,
+              0, 130, -220
+        };
+        static u8 testColors[12] ATTRIBUTE_ALIGN(32) = {
+            255, 255, 0, 255,
+            255, 255, 0, 255,
+            255, 255, 0, 255
+        };
+        DCFlushRange(testVerts, sizeof(testVerts));
+        DCFlushRange(testColors, sizeof(testColors));
+        if(gWiiTerrainDiagStage >= 1)
+        {
+            GX_SetArray(GX_VA_POS, testVerts, 3 * sizeof(s16));
+            GX_SetArray(GX_VA_CLR0, testColors, 4 * sizeof(u8));
+            GX_Begin(GX_TRIANGLES, GX_VTXFMT0, 3);
+            GX_Position1x16(0); GX_Color1x16(0);
+            GX_Position1x16(1); GX_Color1x16(1);
+            GX_Position1x16(2); GX_Color1x16(2);
+            GX_End();
+        }
+
+        if(gWiiTerrainDiagStage == 1)
+            return;
+
+        GX_SetArray(GX_VA_POS, terrainVerts, 3 * sizeof(s16));
+        GX_SetArray(GX_VA_CLR0, terrainColors, 4 * sizeof(u8));
+
+        const u32 drawCount =
+            (gWiiTerrainDiagStage == 2) ? ((mTerrainProbeDrawCount > 900u) ? 900u : mTerrainProbeDrawCount) :
+            (gWiiTerrainDiagStage == 3) ? ((mTerrainProbeDrawCount > 4500u) ? 4500u : mTerrainProbeDrawCount) :
+            mTerrainProbeDrawCount;
+        const bool wireframeDiag = kForceTransformIsolation ? false : (gWiiTerrainDiagStage <= 3);
+        u32 maxDrawnIndex = 0;
+        for(u32 i = 0; i < drawCount; ++i)
+        {
+            if(mTerrainDirectIndices[i] > maxDrawnIndex)
+                maxDrawnIndex = mTerrainDirectIndices[i];
         }
 
         u32 invalidIndexCount = 0;
         u16 lastValidIdx = 0;
-        GX_Begin(GX_TRIANGLES, GX_VTXFMT0, mTerrainProbeDrawCount);
-        for(u32 i = 0; i < mTerrainProbeDrawCount; ++i)
-        {
-            const u32 vi = mTerrainDirectIndices[i];
-            u16 idx = lastValidIdx;
-            if(vi < vertexCount)
-            {
-                idx = static_cast<u16>(vi);
-                lastValidIdx = idx;
-            }
-            else
-            {
-                ++invalidIndexCount;
-            }
 
-            GX_Position1x16(idx);
-            GX_Color1x16(idx);
+        static int sSubmitVertexLogCounter = 0;
+        if(sSubmitVertexLogCounter < 3 && drawCount >= 3)
+        {
+            for(u32 i = 0; i < 3; ++i)
+            {
+                const u32 viRaw = mTerrainDirectIndices[i];
+                const u16 vi = (viRaw < vertexCount) ? static_cast<u16>(viRaw) : static_cast<u16>(0);
+                const s16 sx = terrainVerts[vi * 3 + 0];
+                const s16 sy = terrainVerts[vi * 3 + 1];
+                const s16 sz = terrainVerts[vi * 3 + 2];
+                const float fx = mTerrainDirectVertices[vi * 3 + 0];
+                const float fy = mTerrainDirectVertices[vi * 3 + 1];
+                const float fz = mTerrainDirectVertices[vi * 3 + 2];
+                OSReport("[TERRAIN_VTX] submit[%u] idx=%u pos_s16=(%d,%d,%d) pos_f32=(%.2f,%.2f,%.2f)\n",
+                    static_cast<unsigned int>(i),
+                    static_cast<unsigned int>(vi),
+                    static_cast<int>(sx),
+                    static_cast<int>(sy),
+                    static_cast<int>(sz),
+                    fx, fy, fz);
+                WiiDebugLog("[TERRAIN_VTX] submit[%u] idx=%u pos_s16=(%d,%d,%d) pos_f32=(%.2f,%.2f,%.2f)\n",
+                    static_cast<unsigned int>(i),
+                    static_cast<unsigned int>(vi),
+                    static_cast<int>(sx),
+                    static_cast<int>(sy),
+                    static_cast<int>(sz),
+                    fx, fy, fz);
+            }
+            sSubmitVertexLogCounter++;
         }
-        GX_End();
+
+        if(!wireframeDiag)
+        {
+            GX_Begin(GX_TRIANGLES, GX_VTXFMT0, drawCount);
+            for(u32 i = 0; i < drawCount; ++i)
+            {
+                const u32 vi = mTerrainDirectIndices[i];
+                u16 idx = lastValidIdx;
+                if(vi < vertexCount)
+                {
+                    idx = static_cast<u16>(vi);
+                    lastValidIdx = idx;
+                }
+                else
+                {
+                    ++invalidIndexCount;
+                }
+
+                GX_Position1x16(idx);
+                GX_Color1x16(idx);
+            }
+            GX_End();
+        }
+        else
+        {
+            const u32 triCount = drawCount / 3;
+            GX_Begin(GX_LINES, GX_VTXFMT0, triCount * 6);
+            for(u32 t = 0; t < triCount; ++t)
+            {
+                const u32 iaRaw = mTerrainDirectIndices[t * 3 + 0];
+                const u32 ibRaw = mTerrainDirectIndices[t * 3 + 1];
+                const u32 icRaw = mTerrainDirectIndices[t * 3 + 2];
+
+                const u16 ia = (iaRaw < vertexCount) ? static_cast<u16>(iaRaw) : lastValidIdx;
+                const u16 ib = (ibRaw < vertexCount) ? static_cast<u16>(ibRaw) : lastValidIdx;
+                const u16 ic = (icRaw < vertexCount) ? static_cast<u16>(icRaw) : lastValidIdx;
+
+                if(iaRaw >= vertexCount) ++invalidIndexCount;
+                if(ibRaw >= vertexCount) ++invalidIndexCount;
+                if(icRaw >= vertexCount) ++invalidIndexCount;
+
+                lastValidIdx = ia;
+
+                GX_Position1x16(ia); GX_Color1x16(ia);
+                GX_Position1x16(ib); GX_Color1x16(ib);
+
+                GX_Position1x16(ib); GX_Color1x16(ib);
+                GX_Position1x16(ic); GX_Color1x16(ic);
+
+                GX_Position1x16(ic); GX_Color1x16(ic);
+                GX_Position1x16(ia); GX_Color1x16(ia);
+            }
+            GX_End();
+        }
 
         static int sTopologyLogCounter = 0;
         if(sTopologyLogCounter < 5)
         {
-            WiiDebugLog("[TERRAIN_RENDER] indexed topology drawCount=%u vertexCount=%u indexCount=%u invalid=%u\n",
-                static_cast<unsigned int>(mTerrainProbeDrawCount),
+            WiiDebugLog("[TERRAIN_RENDER] indexed topology drawCount=%u vertexCount=%u indexCount=%u invalid=%u maxDrawnIndex=%u wire=%d\n",
+                static_cast<unsigned int>(drawCount),
                 static_cast<unsigned int>(vertexCount),
                 static_cast<unsigned int>(indexCount),
-                static_cast<unsigned int>(invalidIndexCount));
+                static_cast<unsigned int>(invalidIndexCount),
+                static_cast<unsigned int>(maxDrawnIndex),
+                wireframeDiag ? 1 : 0);
             sTopologyLogCounter++;
         }
 

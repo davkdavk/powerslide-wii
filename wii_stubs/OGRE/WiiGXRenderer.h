@@ -68,6 +68,7 @@ namespace WiiGX
         void shutdown();
         void beginFrame();
         void endFrame();
+        void setFramePresentEnabled(bool enable);
         
         void setClearColor(u8 r, u8 g, u8 b, u8 a);
         void presentProbeColor(u8 r, u8 g, u8 b, u8 a = 255);
@@ -162,6 +163,7 @@ namespace WiiGX
         std::vector<float> mTerrainDirectVertices;
         std::vector<u32> mTerrainDirectIndices;
         bool mTerrainDirectDataValid;
+        bool mFramePresentEnabled;
     };
     
     class Timer

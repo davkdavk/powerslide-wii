@@ -1,5 +1,12 @@
 # Known Issues / Limitations
 
+## 2026-04-01 current blocker snapshot
+- Historical blocker `triIndexes size 0 < triCount` is no longer the active front-line issue in latest runs.
+- Latest real Wii logs show valid terrain payload and indexed draw execution, but on-screen output is still unstable (moving/stretched/random triangles).
+- Latest Dolphin runs diverge from Wii (mostly clear blue/red, no persistent terrain), so Dolphin is currently secondary for final render correctness and Wii remains source of truth.
+- Experimental null-physics world-step recovery caused a crash path through `Physics::timeStep`; this path was reverted and should remain disabled until full vehicle/physics init is intentionally re-enabled.
+- Active deployment friction: SD card repeatedly remounts read-only, causing intermittent inability to deploy newest build and increasing risk of testing stale binaries.
+
 ## Build
 - Milestone 1 compile target reached: 97/97 translation units compile.
 - Full link now succeeds and a Wii DOL is generated (`wii_build/powerslide_full.elf`, `wii_build/powerslide_full.dol`).

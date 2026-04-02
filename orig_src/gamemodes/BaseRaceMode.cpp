@@ -1105,15 +1105,21 @@ void BaseRaceMode::frameStarted(const Ogre::FrameEvent &evt)
         }
 
         #if defined(WII_NATIVE_ASSET_PIPELINE)
-        WiiGX::Renderer::getInstance().renderTerrainBuffer();
+        WiiGX::Renderer& gx = WiiGX::Renderer::getInstance();
+        gx.setFramePresentEnabled(true);
+        gx.beginFrame();
+        gx.renderTerrainBuffer();
+        gx.endFrame();
+        gx.setFramePresentEnabled(false);
+        WiiDebugLog("[RACE] frameStarted: player physics is null, fallback terrain render presented\n");
+        return;
         #else
         if(sTrackOverlayUploaded)
             WiiGX::Renderer::getInstance().renderTrackBuffer();
-        #endif
-
         WiiDebugLog("[RACE] frameStarted: player physics is null, skipping frame\n");
-#endif
         return;
+        #endif
+#endif
     }
 
     if(playerPhysics->isNitro())
