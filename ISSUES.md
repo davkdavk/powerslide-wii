@@ -1,5 +1,24 @@
 # Known Issues / Limitations
 
+## 2026-04-02 current texture-mapping blocker
+- Terrain textures are now loading and binding in Wii stable mode, but mapping remains incorrect: one texture pattern repeats across wide geometry regions.
+- Per-batch texture selection and UV submission are now wired, but correctness still depends on validating UV quality and expected per-material chunk boundaries in live runs.
+- UV safety mode currently clamps UVs and falls back to planar UV on invalid samples; this avoids catastrophic regressions but can still hide fine-grained material mapping errors.
+- Temporary clamp-wrap policy reduces full-scene tiling noise for validation but may differ from final intended material wrap behavior.
+- Immediate validation dependency: collect real Wii `debug.log` with `[TEX_BIND]` and `[UVDBG]` lines to verify source texture usage and UV ranges per batch.
+
+## 2026-04-02 current blockers after terrain breakthrough
+- Primary corruption blocker is resolved: random/stretched triangle chaos is replaced by stable full-map terrain rendering on real Wii.
+- Current render path is still a centered debug-space baseline, not yet full gameplay/world-camera parity.
+- Depth readability remains approximate (height-color shading); textured terrain/material pipeline is not complete yet.
+- Runtime button toggles for camera/texture diagnostics exist, but user-facing behavior still needs refinement/verification in live runs.
+- SD mount churn (read-only/unmount) remains an operational risk for reliable deploy/test iteration.
+
+## Milestone risk notes
+- M2 camera parity risk: reintroducing world-camera math can regress to non-visible/unstable terrain if done as a hard switch.
+- M3 real texture risk: full material path reintroduction may destabilize rendering; maintain procedural/vertex-color fallback until validated.
+- M4 runtime re-entry risk: physics/model bring-up can reintroduce null-path crashes if enabled without staged guards.
+
 ## 2026-04-01 current blocker snapshot
 - Historical blocker `triIndexes size 0 < triCount` is no longer the active front-line issue in latest runs.
 - Latest real Wii logs show valid terrain payload and indexed draw execution, but on-screen output is still unstable (moving/stretched/random triangles).

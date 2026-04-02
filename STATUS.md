@@ -1,4 +1,43 @@
-# STATUS REPORT - 2026-04-01
+# STATUS REPORT - 2026-04-02
+
+## 2026-04-02 latest status (current)
+
+- Real Wii texture path now binds loaded terrain textures in stable mode; user confirmed visible texture content (no longer flat shading only).
+- Current active blocker changed from texture-load failure to mapping correctness:
+  - texture pattern repeats broadly across geometry when texture mode is enabled.
+- Per-batch terrain metadata and UV path were reintroduced in Wii direct renderer:
+  - upload path now records chunk batch ranges and texture names,
+  - render path iterates chunk batches and binds textures per batch.
+- Native mesh upload now sends explicit per-index UVs through `uploadTerrainIndexedDataWithUV(...)`.
+- UV safety guardrails are active in stable path to prevent prior white-screen regressions:
+  - sanity/range checks,
+  - clamped UV output,
+  - planar fallback for invalid UV samples.
+- Added new runtime diagnostics in `debug.log` for source-of-truth validation:
+  - `[TEX_BIND] requested=... source=...`
+  - `[UVDBG] batch=... rangeU/rangeV ... invalidUV=...`
+- Build status: `make -j2` passes and generates current `wii_build/powerslide.dol`.
+
+- Real Wii milestone reached: full track mesh is now visible and recognizable on hardware.
+- Stable render baseline is active in `wii_stubs/OGRE/WiiGXRenderer.cpp` using centered camera-space terrain transform (`v - center`, fixed forward offset) with indexed triangle draw.
+- Full draw budget is enabled (`drawCountStable = mTerrainProbeDrawCount`), and user confirmed stability at full map scale.
+- Depth readability improved without wireframe by applying height-based vertex color gradient (safe path; no wireframe line-emulation).
+- Camera movement controls are re-enabled in stable mode (D-pad X/Z, `A/B` Y).
+- Runtime state toggles were added (`+/-/1/2`) for camera/texture diagnostics; mode logging is present in `debug.log`.
+- Data contracts remain healthy in latest runs: valid payload, finite vertices, index range in bounds; blocker is no longer geometry corruption.
+- Next focus: transition from centered debug camera toward gameplay/world camera while preserving this stable baseline, then texture path bring-up.
+
+## Milestone tracker (next)
+
+- M1 - Stable visual baseline: complete.
+- M2 - Camera parity: in progress.
+  - Goal: gameplay/world camera mode behaves correctly while centered fallback remains available.
+- M3 - Real terrain textures: pending.
+  - Goal: replace procedural/checker terrain sampling with real track texture mapping.
+- M4 - Race runtime re-entry: pending.
+  - Goal: re-enable car/model/physics flow on top of stable terrain renderer without regressions.
+- M5 - Performance and cleanup: pending.
+  - Goal: reduce debug-only paths, keep one known-good fallback mode, and validate Wii performance envelope.
 
 ## 2026-04-01 latest status (current)
 

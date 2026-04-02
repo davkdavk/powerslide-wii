@@ -720,12 +720,18 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
             }
             else
             {
+                if(!mshData.textureNames.empty() && !mshData.textureNames[0].empty())
+                {
+                    WiiGX::Renderer::getInstance().setTerrainTextureName(mshData.textureNames[0]);
+                }
+
                 const u32 vertexCount = static_cast<u32>(mshData.vertCount);
                 const u32 indexCount = static_cast<u32>(mshData.triCount * 3);
                 WiiGX::Renderer::getInstance().setTerrainBuildProbe(static_cast<u32>(mshData.triCount));
 
                 static std::vector<float> terrainVerts;
                 static std::vector<u32> terrainIndices;
+                static std::vector<float> terrainUvByIndex;
                 terrainVerts.resize(vertexCount * 3);
                 for(u32 v = 0; v < vertexCount; ++v)
                 {
@@ -734,8 +740,10 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                     terrainVerts[v * 3 + 2] = mshData.vertexes[v].z;
                 }
                 terrainIndices.resize(indexCount);
+                terrainUvByIndex.resize(indexCount * 2);
                 u32 maxIndex = 0;
                 u32 invalidIndexCount = 0;
+                u32 invalidUvCount = 0;
                 for(u32 t = 0; t < mshData.triCount; ++t)
                 {
                     const u32 ia = static_cast<u32>(mshData.triIndexes[t].a);
@@ -750,6 +758,27 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                     if(ia >= vertexCount) ++invalidIndexCount;
                     if(ib >= vertexCount) ++invalidIndexCount;
                     if(ic >= vertexCount) ++invalidIndexCount;
+
+                    const bool hasTexTri = t < mshData.texCoordsIndexes.size();
+                    const u32 ta = hasTexTri ? static_cast<u32>(mshData.texCoordsIndexes[t].a) : 0u;
+                    const u32 tb = hasTexTri ? static_cast<u32>(mshData.texCoordsIndexes[t].b) : 0u;
+                    const u32 tc = hasTexTri ? static_cast<u32>(mshData.texCoordsIndexes[t].c) : 0u;
+                    const bool validTa = hasTexTri && (ta < mshData.texcoords.size());
+                    const bool validTb = hasTexTri && (tb < mshData.texcoords.size());
+                    const bool validTc = hasTexTri && (tc < mshData.texcoords.size());
+                    if(!validTa) ++invalidUvCount;
+                    if(!validTb) ++invalidUvCount;
+                    if(!validTc) ++invalidUvCount;
+
+                    const Ogre::Vector3 uva = validTa ? mshData.texcoords[ta] : Ogre::Vector3::ZERO;
+                    const Ogre::Vector3 uvb = validTb ? mshData.texcoords[tb] : Ogre::Vector3::ZERO;
+                    const Ogre::Vector3 uvc = validTc ? mshData.texcoords[tc] : Ogre::Vector3::ZERO;
+                    terrainUvByIndex[(t * 3 + 0) * 2 + 0] = uva.x;
+                    terrainUvByIndex[(t * 3 + 0) * 2 + 1] = uva.y;
+                    terrainUvByIndex[(t * 3 + 1) * 2 + 0] = uvb.x;
+                    terrainUvByIndex[(t * 3 + 1) * 2 + 1] = uvb.y;
+                    terrainUvByIndex[(t * 3 + 2) * 2 + 0] = uvc.x;
+                    terrainUvByIndex[(t * 3 + 2) * 2 + 1] = uvc.y;
                 }
 
                 float minX = 1.0e30f, minY = 1.0e30f, minZ = 1.0e30f;
@@ -774,12 +803,13 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                 static int sContractMeshLogs = 0;
                 if(sContractMeshLogs < 128)
                 {
-                    WiiDebugLog("[CONTRACT][MESH] name=%s verts=%u idx=%u maxIdx=%u invalid=%u nonFinite=%u bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
+                    WiiDebugLog("[CONTRACT][MESH] name=%s verts=%u idx=%u maxIdx=%u invalid=%u invalidUV=%u nonFinite=%u bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
                         entityName.c_str(),
                         static_cast<unsigned int>(vertexCount),
                         static_cast<unsigned int>(indexCount),
                         static_cast<unsigned int>(maxIndex),
                         static_cast<unsigned int>(invalidIndexCount),
+                        static_cast<unsigned int>(invalidUvCount),
                         static_cast<unsigned int>(nonFiniteVerts),
                         minX, minY, minZ, maxX, maxY, maxZ);
                     sContractMeshLogs++;
@@ -794,8 +824,8 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                         static_cast<unsigned int>(vertexCount));
                 }
 
-                WiiGX::Renderer::getInstance().uploadTerrainIndexedData(
-                    terrainVerts.data(), vertexCount, terrainIndices.data(), indexCount);
+                WiiGX::Renderer::getInstance().uploadTerrainIndexedDataWithUV(
+                    terrainVerts.data(), vertexCount, terrainIndices.data(), indexCount, terrainUvByIndex.data());
 
                 WiiDebugLog("[GXDIR] uploading chunk: triIndexes size %u == triCount %u verts=%u indices=%u\n",
                     static_cast<unsigned int>(mshData.triIndexes.size()),

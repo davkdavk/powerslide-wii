@@ -1,5 +1,51 @@
 # Progress
 
+## 2026-04-02 - per-batch terrain texture+UV reintroduction pass
+
+- User confirmed real terrain textures now load on Wii, but one texture pattern was repeating across most geometry.
+- Reworked Wii direct terrain path to preserve per-chunk draw metadata during upload:
+  - added chunk batches with `indexStart/indexCount/uvStart/textureName` in `WiiGXRenderer`.
+- Re-enabled UV upload on native path by switching terrain upload call to `uploadTerrainIndexedDataWithUV(...)` in `StaticMeshProcesser::createMesh(...)`.
+- Updated stable stage-4 render path to draw by batch and attempt per-batch texture resolution/binding.
+- Added UV safety guards for Wii stability:
+  - finite/range checks,
+  - clamped UV output,
+  - fallback to prior planar UV when incoming UV is invalid.
+- Switched temporary texture wrap mode to clamp in guarded pass to prevent full-scene aggressive repeat while validating UV correctness.
+- Added runtime diagnostics:
+  - `[TEX_BIND] requested=... source=...` to confirm actual loaded texture source,
+  - `[UVDBG]` per-batch UV ranges and invalid UV counts.
+- Build verification passed (`make -j2`), producing updated `wii_build/powerslide.dol`.
+
+## 2026-04-02 - Wii terrain visibility breakthrough
+
+- Achieved first stable full-map terrain visibility on real Wii; user confirmed the rendered mesh is recognizably the level.
+- Used staged visual debugging to isolate failure domains:
+  - stage 1 fullscreen quad confirmed present/copy path,
+  - stage 2 camera-space primitives confirmed 3D draw viability,
+  - terrain points/subset tests confirmed source vertex data is valid and visible when centered.
+- Identified root cause class as world-space transform integration mismatch in prior path, not asset/index corruption.
+- Promoted centered camera-space terrain draw to baseline path in `WiiGXRenderer::renderTerrainBuffer()`:
+  - full indexed draw now stable on hardware.
+- Increased stable draw budget progressively (12k -> 24k -> full) with successful user validation at full scale.
+- Added depth cue via height-based color gradient (safe alternative to wireframe).
+- Re-enabled camera movement controls in stable mode.
+- Added runtime diagnostic toggles and logs:
+  - camera mode / texture mode toggle hooks and state logs in `debug.log`.
+- Current branch now has a practical, stable terrain baseline suitable for controlled reintroduction of gameplay camera and textures.
+
+## 2026-04-02 - milestone plan formalized
+
+- Added explicit incremental milestone sequence to keep work scoped and reversible:
+  - M1 stable baseline (done),
+  - M2 camera parity,
+  - M3 real terrain textures,
+  - M4 race runtime re-entry,
+  - M5 performance/cleanup.
+- Current active execution focus is M2/M3 overlap:
+  - camera controls and yaw adjustments in stable path,
+  - terrain texture path improved via safe procedural mode with fallback.
+
 ## 2026-04-01 - current pass update (keep history, refresh latest)
 
 - Kept full historical entries intact; added this top entry as the current state snapshot.

@@ -1,5 +1,26 @@
 # Decisions Log
 
+## 2026-04-02 (texture/UV correction strategy after successful texture load)
+- Accepted that current priority is no longer "can textures load" but "can textures map correctly per geometry batch".
+- Chose a guarded UV reintroduction approach in the stable stage-4 Wii renderer:
+  - use uploaded per-index UVs when finite/in-range,
+  - otherwise fall back to prior planar UV mapping.
+- Chose to preserve chunk-level boundaries in renderer-owned terrain buffers so rendering can bind per-batch texture names instead of one global texture assumption.
+- Temporarily forced clamp wrap mode in guarded texture pass to reduce repeated-pattern masking during correctness diagnostics; defer final wrap policy until UV/routing is validated.
+- Added mandatory texture/UV diagnostics (`[TEX_BIND]`, `[UVDBG]`) as required evidence for next iteration decisions, rather than relying on visual guesswork alone.
+
+## 2026-04-02 (terrain stabilization decisions)
+- Accepted centered camera-space terrain transform as the first stable Wii baseline after repeated world-space path failures.
+- Chose pragmatic staged validation over large rewrites: fullscreen present -> camera-space primitives -> terrain points/subset -> full indexed terrain.
+- Deferred wireframe as a primary diagnostic because Wii line-emulation path was unstable and misleading under current GX constraints.
+- Standardized on safe depth cueing via height-based vertex coloring while textured pipeline is brought up incrementally.
+- Kept this baseline as the safety anchor; future gameplay/world-camera and texture work should be introduced behind toggles/fallbacks to avoid regressions.
+
+## 2026-04-02 (milestone execution policy)
+- Adopted explicit staged milestones (M1-M5) with a single active milestone focus at a time.
+- Preserve a runnable baseline at every step; no milestone work should remove the ability to render the map stably.
+- Prefer additive toggles/fallbacks when introducing new camera or texture behavior, then remove dead paths only after milestone validation.
+
 ## 2026-04-01 (current diagnostic decisions)
 - Keep full historical records; add top-of-file current-state entries instead of rewriting prior logs.
 - Treat real Wii output/logs as primary truth for render bring-up; Dolphin remains useful for crash symbolization and quick smoke checks but not final visual parity.
