@@ -99,6 +99,8 @@ namespace WiiGX
         void setCarStartPositionF32(float x, float y, float z);
         void setCarForwardDirF32(float x, float y, float z);
         void setTerrainTextureName(const std::string& textureName);
+        void setTerrainTextureClamp(bool clampTexture);
+        void setTerrainTextureScale(float scaleU, float scaleV);
         void updateCameraFromInput();
         void setTerrainChunkColorF32(float r, float g, float b);
         bool uploadTerrainIndexedData(const float* vertexPositions, u32 vertexCount, const u32* indices, u32 indexCount);
@@ -114,6 +116,9 @@ namespace WiiGX
             u32 indexCount;
             u32 uvStart;
             std::string textureName;
+            bool clampTexture;
+            float textureScaleU;
+            float textureScaleV;
         };
 
         Renderer();
@@ -175,6 +180,9 @@ namespace WiiGX
         std::vector<float> mTerrainDirectUVByIndex;
         std::vector<TerrainChunkBatch> mTerrainChunkBatches;
         std::string mTerrainTextureName;
+        bool mTerrainTextureClamp;
+        float mTerrainTextureScaleU;
+        float mTerrainTextureScaleV;
         bool mTerrainDirectDataValid;
         bool mFramePresentEnabled;
     };

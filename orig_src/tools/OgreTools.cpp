@@ -34,6 +34,7 @@ Ogre::MaterialPtr CloneMaterial(const Ogre::String& newMaterialName, const Ogre:
         return Ogre::MaterialPtr();
     }
 
+    Ogre::Technique* sourceTechnique = material->getTechnique(0);
     Ogre::Technique* technique = materialNew->getTechnique(0);
     if(!technique)
     {
@@ -43,6 +44,15 @@ Ogre::MaterialPtr CloneMaterial(const Ogre::String& newMaterialName, const Ogre:
         return materialNew;
     }
 
+    if(!sourceTechnique)
+    {
+#if defined(WII) || defined(__wii__)
+        WiiDebugLog("[CLONE_MAT] no source technique old=%s new=%s\n", oldMaterialName.c_str(), newMaterialName.c_str());
+#endif
+        return materialNew;
+    }
+
+    Ogre::Pass* sourcePass = sourceTechnique->getPass(0);
     Ogre::Pass* pass = technique->getPass(0);
     if(!pass)
     {
@@ -52,8 +62,25 @@ Ogre::MaterialPtr CloneMaterial(const Ogre::String& newMaterialName, const Ogre:
         return materialNew;
     }
 
+    if(!sourcePass)
+    {
+#if defined(WII) || defined(__wii__)
+        WiiDebugLog("[CLONE_MAT] no source pass old=%s new=%s\n", oldMaterialName.c_str(), newMaterialName.c_str());
+#endif
+        return materialNew;
+    }
+
     for(size_t q = 0; q < texturesNames.size(); ++q){
         Ogre::TextureUnitState * state = 0;
+        Ogre::TextureUnitState::TextureAddressingMode addressMode = Ogre::TextureUnitState::TAM_WRAP;
+        if(q < sourcePass->getNumTextureUnitStates())
+        {
+            Ogre::TextureUnitState* srcState = sourcePass->getTextureUnitState(static_cast<Ogre::ushort>(q));
+            if(srcState)
+            {
+                addressMode = srcState->getTextureAddressingMode();
+            }
+        }
         if(q < pass->getNumTextureUnitStates())
         {
             state = pass->getTextureUnitState(static_cast<Ogre::ushort>(q));
@@ -76,6 +103,7 @@ Ogre::MaterialPtr CloneMaterial(const Ogre::String& newMaterialName, const Ogre:
 
         state->setTextureName(texturesNames[q]);
         state->setTextureScale(scale, scale);
+        state->setTextureAddressingMode(addressMode);
 
         //d.polubotko: adjust OgreGLHardwearePixelBuffer.cpp in ogre 1.9.0 - add line 674
         //if((mUsage & TU_AUTOMIPMAP))

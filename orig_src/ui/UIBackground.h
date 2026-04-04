@@ -39,7 +39,7 @@ protected:
 
 private:
 
-    
+    bool mDisabled;
     void createCamera();
     void destroyCamera();
 

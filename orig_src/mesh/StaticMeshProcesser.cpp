@@ -737,6 +737,41 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
 
 #if defined(WII_NATIVE_ASSET_PIPELINE)
         {
+            std::vector<bool> terrainTextureClampBySlot(mshData.textureNames.size(), false);
+            std::vector<float> terrainTextureScaleUBySlot(mshData.textureNames.size(), 1.0f);
+            std::vector<float> terrainTextureScaleVBySlot(mshData.textureNames.size(), 1.0f);
+            for(size_t texSlot = 0; texSlot < terrainTextureClampBySlot.size(); ++texSlot)
+            {
+                bool clampTexture = (texSlot < mshData.isDecalTexture.size()) ? mshData.isDecalTexture[texSlot] : false;
+                const char* clampSource = (texSlot < mshData.isDecalTexture.size()) ? "de2" : "default";
+                float textureScaleU = 1.0f;
+                float textureScaleV = 1.0f;
+
+                if(texSlot < materialNames.size())
+                {
+                    Ogre::MaterialPtr terrainMaterial = Ogre::MaterialManager::getSingleton().getByName(materialNames[texSlot]);
+                    if(!terrainMaterial.isNull())
+                    {
+                        Ogre::Technique* technique = terrainMaterial->getTechnique(0);
+                        Ogre::Pass* pass = technique ? technique->getPass(0) : 0;
+                        Ogre::TextureUnitState* state = pass ? pass->getTextureUnitState(0) : 0;
+                        if(state)
+                        {
+                            clampTexture = (state->getTextureAddressingMode() == Ogre::TextureUnitState::TAM_CLAMP);
+                            textureScaleU = state->getTextureScaleU();
+                            textureScaleV = state->getTextureScaleV();
+                            clampSource = "material";
+                        }
+                    }
+                }
+
+                terrainTextureClampBySlot[texSlot] = clampTexture;
+                terrainTextureScaleUBySlot[texSlot] = textureScaleU;
+                terrainTextureScaleVBySlot[texSlot] = textureScaleV;
+
+                (void)clampSource;
+            }
+
             if(mshData.vertCount == 0 || mshData.triCount == 0)
             {
                 WiiDebugLog("[GXDIR] skipping chunk with no vertices or triangles\n");
@@ -758,6 +793,10 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                 if(!mshData.textureNames.empty() && !mshData.textureNames[0].empty())
                 {
                     WiiGX::Renderer::getInstance().setTerrainTextureName(mshData.textureNames[0]);
+                    WiiGX::Renderer::getInstance().setTerrainTextureClamp(!terrainTextureClampBySlot.empty() ? terrainTextureClampBySlot[0] : false);
+                    WiiGX::Renderer::getInstance().setTerrainTextureScale(
+                        !terrainTextureScaleUBySlot.empty() ? terrainTextureScaleUBySlot[0] : 1.0f,
+                        !terrainTextureScaleVBySlot.empty() ? terrainTextureScaleVBySlot[0] : 1.0f);
                 }
 
                 const u32 vertexCount = static_cast<u32>(mshData.vertCount);
@@ -847,27 +886,6 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                     if(z < minZ) minZ = z; if(z > maxZ) maxZ = z;
                 }
 
-                static int sContractMeshLogs = 0;
-                if(sContractMeshLogs < 128)
-                {
-                    const char* chunkTex = (mshData.textureNames.empty() || mshData.textureNames[0].empty()) ? "<none>" : mshData.textureNames[0].c_str();
-                    WiiDebugLog("[CONTRACT][MESH] name=%s verts=%u idx=%u maxIdx=%u invalid=%u invalidUV=%u nonFinite=%u bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
-                        entityName.c_str(),
-                        static_cast<unsigned int>(vertexCount),
-                        static_cast<unsigned int>(indexCount),
-                        static_cast<unsigned int>(maxIndex),
-                        static_cast<unsigned int>(invalidIndexCount),
-                        static_cast<unsigned int>(invalidUvCount),
-                        static_cast<unsigned int>(nonFiniteVerts),
-                        minX, minY, minZ, maxX, maxY, maxZ);
-                    WiiDebugLog("[CHUNK_TEXMAP] name=%s tex=%s tris=%u bbox=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
-                        entityName.c_str(),
-                        chunkTex,
-                        static_cast<unsigned int>(mshData.triCount),
-                        minX, minY, minZ, maxX, maxY, maxZ);
-                    sContractMeshLogs++;
-                }
-
                 if(invalidIndexCount > 0)
                 {
                     WiiDebugLog("[CONTRACT][MESH][FAIL] name=%s invalid=%u maxIdx=%u verts=%u\n",
@@ -916,6 +934,10 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                         if(!mshData.textureNames[texSlot].empty())
                         {
                             WiiGX::Renderer::getInstance().setTerrainTextureName(mshData.textureNames[texSlot]);
+                            WiiGX::Renderer::getInstance().setTerrainTextureClamp(texSlot < terrainTextureClampBySlot.size() ? terrainTextureClampBySlot[texSlot] : false);
+                            WiiGX::Renderer::getInstance().setTerrainTextureScale(
+                                texSlot < terrainTextureScaleUBySlot.size() ? terrainTextureScaleUBySlot[texSlot] : 1.0f,
+                                texSlot < terrainTextureScaleVBySlot.size() ? terrainTextureScaleVBySlot[texSlot] : 1.0f);
                         }
 
                         WiiGX::Renderer::getInstance().uploadTerrainIndexedDataWithUV(
@@ -925,24 +947,17 @@ Ogre::Entity* StaticMeshProcesser::createMesh(  lua_State * pipeline,
                             static_cast<u32>(indicesByTexture[texSlot].size()),
                             uvByTexture[texSlot].data());
 
-                        WiiDebugLog("[GXDIR] uploading sub-batch: triIndexes=%u verts=%u indices=%u texSlot=%u tex='%s'\n",
-                            static_cast<unsigned int>(mshData.triIndexes.size()),
-                            static_cast<unsigned int>(vertexCount),
-                            static_cast<unsigned int>(indicesByTexture[texSlot].size()),
-                            static_cast<unsigned int>(texSlot),
-                            mshData.textureNames[texSlot].c_str());
                     }
                 }
                 else
                 {
+                    WiiGX::Renderer::getInstance().setTerrainTextureClamp(!terrainTextureClampBySlot.empty() ? terrainTextureClampBySlot[0] : false);
+                    WiiGX::Renderer::getInstance().setTerrainTextureScale(
+                        !terrainTextureScaleUBySlot.empty() ? terrainTextureScaleUBySlot[0] : 1.0f,
+                        !terrainTextureScaleVBySlot.empty() ? terrainTextureScaleVBySlot[0] : 1.0f);
                     WiiGX::Renderer::getInstance().uploadTerrainIndexedDataWithUV(
                         terrainVerts.data(), vertexCount, terrainIndices.data(), indexCount, terrainUvByIndex.data());
 
-                    WiiDebugLog("[GXDIR] uploading chunk: triIndexes size %u == triCount %u verts=%u indices=%u\n",
-                        static_cast<unsigned int>(mshData.triIndexes.size()),
-                        static_cast<unsigned int>(mshData.triCount),
-                        static_cast<unsigned int>(vertexCount),
-                        static_cast<unsigned int>(indexCount));
                 }
             }
         }

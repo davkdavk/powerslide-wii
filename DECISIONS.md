@@ -1,5 +1,88 @@
 # Decisions Log
 
+## 2026-04-04 (confirmed native GX texture contract fix)
+- Confirmed by real Wii result that the remaining desert track mapping bug was not DE2 UV decoding.
+- Root cause: native direct GX real-texture path uploaded terrain/world-object textures as row-major `RGB565`, while GX expects tiled memory layout for `GX_TF_RGB565`.
+- Decision: keep DE2 `uv/uw` as the active direct-path UV pair for now and fix the renderer contract first.
+- Implemented tiled `RGB565` terrain texture cache/build path in `wii_stubs/OGRE/WiiGXRenderer.cpp`.
+- Keep earlier per-batch sampler-state propagation (wrap/clamp and texture scale) as part of the baseline.
+
+## 2026-04-04 (Emergency restore assessment)
+
+### `git status`
+
+```text
+On branch main
+Your branch is up to date with 'origin/wii-port'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   DECISIONS.md
+	modified:   ISSUES.md
+	modified:   PROGRESS.md
+	modified:   STATUS.md
+	modified:   orig_src/BaseApp.cpp
+	modified:   orig_src/mesh/MshData.h
+	modified:   rules.md
+	modified:   wii_stubs/OGRE/Ogre.h
+	modified:   wii_stubs/OGRE/WiiGXRenderer.cpp
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	dolphin_latest.log
+	orig_src/TerrainDebug.cpp
+	orig_src/TerrainDebug.h
+
+no changes added to commit (use "git add" and/or "git commit -a")
+```
+
+### `git diff --stat HEAD`
+
+```text
+ DECISIONS.md                     |  21 +++
+ ISSUES.md                        |  25 +++
+ PROGRESS.md                      |  25 +++
+ STATUS.md                        |  36 ++++-
+ orig_src/BaseApp.cpp             |  31 ++++
+ orig_src/mesh/MshData.h          |   2 +-
+ rules.md                         |   9 ++
+ wii_stubs/OGRE/Ogre.h            |   6 +-
+ wii_stubs/OGRE/WiiGXRenderer.cpp | 319 ++++++++++++++++++++++++++++-----------
+ 9 files changed, 386 insertions(+), 88 deletions(-)
+```
+
+### `git log --oneline -10`
+
+```text
+676149c Fix Wii terrain texture assignment and world-space UVs
+5f1a5a1 Stabilize Wii terrain texture routing and harden crash paths
+d525a3f Improve Wii terrain texture mapping diagnostics and batch UV path
+9d81e4a Stabilize Wii terrain rendering with centered transform baseline
+004812e Initialize Wii native terrain debug baseline
+```
+
+## 2026-04-03 (current direct-GX UV policy and object-path decisions)
+- Reclassified the church and water tank issue: they are not going through the regular Wii mesh renderer. They are part of the track DE2 loaded with `isTerrain=true` and are rendered through the direct GX indexed terrain-style path.
+- Decision: stop spending time on the generic model/submesh renderer as the primary fix path for church-like world objects. Keep those fixes, but treat them as secondary until the direct GX path matches PC behavior.
+- Confirmed with user visual evidence that the pink debug-color batch behaves correctly while other colored batches do not. Decision: treat this as a per-batch uploaded-UV acceptance/handling issue, not a whole-object classification issue.
+- Decision: normalize all textured direct GX chunks to the same batching behavior as the good pink chunks:
+  - textured chunks always use the per-texture sub-batch upload branch when texture names exist,
+  - missing triangle-slot data falls back to texture slot `0` instead of taking a separate single-upload path.
+- Decision: remove silent world-planar fallback for chunks that already have uploaded UV data. If a batch has uploaded UVs, use them; only use planar mapping when no uploaded UV stream exists.
+- Decision: remove the Wii-side UV magnitude gate for direct GX batches and accept any finite uploaded UV values. Rationale: pink likely survived because its UV magnitudes happened to fit the old cutoff while other valid batches did not.
+- Decision: use PC OGRE only as the reference for expected UV behavior, not as the active implementation target. Confirmed behavior: mountains/buildings may legitimately be separate UV islands as long as each island is internally coherent.
+- Operational decision: continue using real Wii output as source of truth. Dolphin is not a decision-maker for final visual parity in the current phase.
+
+## 2026-04-03 (evidence-driven blocker reclassification from SD log)
+- Read latest hardware log before further blind refactors; used diagnostic summaries as source of truth.
+- Reclassified blocker after confirming in a single run:
+  - `[TEX_FRAME_SUMMARY] requestedUnique=53 boundUnique=53`
+  - `[UV_SUMMARY] batches=229 noUV=72 scale=10.00`
+- Decision: stop treating current issue as a pure single-texture-bind failure.
+- Decision: treat current issue as mapping-fidelity/visual-quality problem under mixed UV availability and current world-planar UV policy.
+- Operational decision: keep strong diagnostics (`[TEX_BATCH]`, `[TEX_BIND]`, `[TEX_FRAME_SUMMARY]`, `[UV_SUMMARY]`) active until visual output matches expected terrain surface variation.
+
 ## 2026-04-02 (UV anchoring correction: world-space only fallback)
 - Confirmed terrain UV fallback in stable Wii render path must never depend on camera-space transformed coordinates.
 - Standardized fallback UV generation for batches with missing inline UVs (`hasUV=0`) to world-space planar mapping only:

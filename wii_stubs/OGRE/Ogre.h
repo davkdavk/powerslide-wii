@@ -1339,8 +1339,11 @@ namespace Ogre
 
         void setTextureName(const String& name) { mTextureName = name; }
         const String& getTextureName() const { return mTextureName; }
-        void setTextureScale(Real u, Real v) { (void)u; (void)v; }
-        void setTextureAddressingMode(TextureAddressingMode mode) { (void)mode; }
+        void setTextureScale(Real u, Real v) { mScaleU = u; mScaleV = v; }
+        Real getTextureScaleU() const { return mScaleU; }
+        Real getTextureScaleV() const { return mScaleV; }
+        void setTextureAddressingMode(TextureAddressingMode mode) { mAddressMode = mode; }
+        TextureAddressingMode getTextureAddressingMode() const { return mAddressMode; }
         void setTextureFiltering(int minFilter, int magFilter, int mipFilter)
         { (void)minFilter; (void)magFilter; (void)mipFilter; }
         void setTextureScroll(Real u, Real v) { (void)u; (void)v; }
@@ -1356,6 +1359,9 @@ namespace Ogre
     private:
         String mTextureName;
         TexturePtr mTexture;
+        Real mScaleU = 1.0f;
+        Real mScaleV = 1.0f;
+        TextureAddressingMode mAddressMode = TAM_WRAP;
         ContentType mContentType = CONTENT_NAMED;
         EffectMap mEffects;
         String mRefComp;

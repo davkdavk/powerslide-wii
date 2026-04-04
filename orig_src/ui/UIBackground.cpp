@@ -77,8 +77,21 @@ Ogre::NameGenerator UIBackground::nameGenTextures("Loaders/Texture");
 UIBackground::UIBackground(const ModeContext& modeContext, 
                            const PFLoader& loader,
                            const std::string& path, const std::string& fileName) :
-    mModeContext(modeContext)
+    mModeContext(modeContext),
+    mLoaderScreen(0),
+    mDisabled(false),
+    mMaterial(),
+    mSceneMgr(0),
+    mCamera(0)
 {
+#if defined(WII_NATIVE_ASSET_PIPELINE)
+    (void)loader;
+    (void)path;
+    (void)fileName;
+    mDisabled = true;
+    return;
+#endif
+
     mMaterialName = nameGenMaterials.generate();
 
     Ogre::String textureName = nameGenTextures.generate();
@@ -167,6 +180,9 @@ Ogre::TextAreaOverlayElement* UIBackground::createTextArea(const Ogre::String& n
 
 void UIBackground::show()
 {
+    if(mDisabled)
+        return;
+
     createCamera();
 
     mModeContext.mWindow->update(true);// update viewport sizes for Ogre::OverlayManager
@@ -185,6 +201,9 @@ void UIBackground::show()
 
 void UIBackground::hide()
 {
+    if(mDisabled)
+        return;
+
     mLoaderScreen->hide();
     mModeContext.getTrayManager()->getTrayContainer(OgreBites::TL_NONE)->removeChild(mLoaderScreen->getName());
 
@@ -205,6 +224,9 @@ void UIBackground::reloadTextures(const PFLoader& loader, const std::string& pat
 
 void UIBackground::createCamera()
 {
+    if(mDisabled)
+        return;
+
     mSceneMgr = mModeContext.mRoot->createSceneManager(Ogre::ST_GENERIC);
     mSceneMgr->addRenderQueueListener(mModeContext.mOverlaySystem);
     mCamera = mSceneMgr->createCamera("LoadScreenCam");
@@ -221,6 +243,9 @@ void UIBackground::createCamera()
 
 void UIBackground::destroyCamera()
 {
+    if(mDisabled || !mSceneMgr)
+        return;
+
     mSceneMgr->clearScene();
     mModeContext.mRoot->destroySceneManager(mSceneMgr);
     mModeContext.mWindow->removeAllViewports();

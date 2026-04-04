@@ -354,8 +354,10 @@ void BaseApp::go(bool isSafeRun)
     gRenderLoopProbeArmed = false;
     gRenderLoopProbeFired = false;
     gWiiReturnToLoaderRequested = false;
+#if !defined(WII_NATIVE_ASSET_PIPELINE)
     SYS_SetResetCallback(onWiiResetButton);
     SYS_SetPowerCallback(onWiiPowerButton);
+#endif
     quiesceWpadStartup();
 #endif
     mGameState.setIsSafeRun(isSafeRun);
@@ -524,7 +526,14 @@ bool BaseApp::frameStarted(const Ogre::FrameEvent &evt)
         return false;
 
     if(mShutDown)
+    {
+#if defined(WII_NATIVE_ASSET_PIPELINE)
+        mShutDown = false;
+        WiiDebugLog("[WII_LOOP] frameStarted ignored shutdown request in native pipeline\n");
+#else
         return false;
+#endif
+    }
 
     if(mGameModeSwitcher)
         mGameModeSwitcher->frameStarted(evt);
@@ -541,7 +550,14 @@ bool BaseApp::frameEnded(const Ogre::FrameEvent &evt)
         return false;
 
     if(mShutDown)
+    {
+#if defined(WII_NATIVE_ASSET_PIPELINE)
+        mShutDown = false;
+        WiiDebugLog("[WII_LOOP] frameEnded ignored shutdown request in native pipeline\n");
+#else
         return false;
+#endif
+    }
 
     if(mGameModeSwitcher)
         mGameModeSwitcher->frameEnded();
@@ -552,12 +568,20 @@ bool BaseApp::frameEnded(const Ogre::FrameEvent &evt)
 bool BaseApp::frameRenderingQueued(const Ogre::FrameEvent& evt)
 {
 #if defined(WII) || defined(__wii__)
+#if defined(WII_NATIVE_ASSET_PIPELINE)
+    if(gWiiReturnToLoaderRequested)
+    {
+        gWiiReturnToLoaderRequested = false;
+        WiiDebugLog("[WII_LOOP] ignored reset/power request in native pipeline\n");
+    }
+#else
     if(gWiiReturnToLoaderRequested)
     {
         WiiDebugLog("[WII_SYS] reset/power requested, returning to loader\n");
         SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
         return false;
     }
+#endif
 #endif
 
     if(!mWindow)
@@ -567,7 +591,14 @@ bool BaseApp::frameRenderingQueued(const Ogre::FrameEvent& evt)
         return false;
 
     if(mShutDown)
+    {
+#if defined(WII_NATIVE_ASSET_PIPELINE)
+        mShutDown = false;
+        WiiDebugLog("[WII_LOOP] ignored shutdown request in native pipeline\n");
+#else
         return false;
+#endif
+    }
 
     if(mGameModeSwitcher)
         mGameModeSwitcher->frameRenderingQueued(evt);
